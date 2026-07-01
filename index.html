@@ -5,15 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>React Starter</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
+              sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
             },
             colors: {
+              brand: {
+                purple: '#7C3AED',
+                purpleDark: '#6D28D9',
+                lime: '#C0F62C',
+                blue: '#06B6D4',
+              },
+              neutralLight: '#F8FAFC',
+              textPrimary: '#0F172A',
+              textMuted: '#64748B',
+              borderGray: '#E2E8F0',
               border: "hsl(var(--border))",
               input: "hsl(var(--input))",
               ring: "hsl(var(--ring))",
@@ -79,6 +89,33 @@
         --input: 214.3 31.8% 91.4%;
         --ring: 222.2 84% 4.9%;
         --radius: 0.5rem;
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+      /* Customização global das barras de rolagem baseada no Design System */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #F8FAFC;
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #A78BFA; /* brand-purple claro */
+        border-radius: 9999px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #8B5CF6; /* brand-purple médio */
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #A78BFA #F8FAFC;
       }
     </style>
   <script type="importmap">
