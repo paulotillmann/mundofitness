@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from './supabaseClient';
 import * as p from 'react/jsx-runtime';
@@ -75,7 +76,250 @@ const wl = AnimatePresence;
             receitas: !1
         }), [M, q] = L.useState([]), [Q, te] = L.useState([]), [F, W] = L.useState([]), [ae, re] = L.useState([]), [Ee, Ae] = L.useState([]), [nt, Je] = L.useState([]), [Oe, P] = L.useState(null), [J, se] = L.useState(""), [ye, Se] = L.useState(""), [j, z] = L.useState(!1), [ee, X] = L.useState(null), [fe, ge] = L.useState(null), [De, dt] = L.useState(!1), [Ge, jn] = L.useState(""), [$s, ls] = L.useState(""), [oa, Zt] = L.useState(""), [Ai, ua] = L.useState("Premium"), [yr, Ps] = L.useState(""), [os, us] = L.useState(""), [cs, ca] = L.useState(""), [vr, vt] = L.useState(""), [br, Vs] = L.useState(""), [In, Kn] = L.useState("Ativo"), [da, ji] = L.useState(null), [Ci, nc] = L.useState([]), [zt, Bt] = L.useState([]), [Tt, Et] = L.useState("ativos"), [cgf, scgf] = L.useState("ativos"), [ha, Hl] = L.useState(""), [fa, Ni] = L.useState(""), [pa, ds] = L.useState(!1), [hn, hs] = L.useState(null), [Cn, ki] = L.useState(""), [Hs, fs] = L.useState(""), [Nn, Ri] = L.useState(""), [qs, Gs] = L.useState(""), [Is, ps] = L.useState(""), [kn, Ks] = L.useState(!1), [ms, Yn] = L.useState("mesinicial_date"), [We, Ot] = L.useState("desc"), [bt, Qt] = L.useState(1), [Oi, ql] = L.useState(null), [Rn, Mi] = L.useState(null), [Fn, gs] = L.useState("asc"), Ys = S => {
             Rn === S ? gs(K => K === "asc" ? "desc" : "asc") : (Mi(S), gs("asc")), Qt(1)
-        }, fn = un.useMemo(() => {
+        },
+        // Nossos novos estados limpos para Consórcios e Pagamentos
+        [selectedConsorcioId, setSelectedConsorcioId] = L.useState<string | null>(null),
+        [selectedPagamentos, setSelectedPagamentos] = L.useState<any[]>([]),
+        
+        // Filtro de mês e ano (padrão abre no mês atual)
+        [filterMonth, setFilterMonth] = L.useState<number>(new Date().getMonth()),
+        [filterYear, setFilterYear] = L.useState<number>(new Date().getFullYear()),
+        [isFilterActive, setIsFilterActive] = L.useState<boolean>(true),
+        [showFilterCalendarPopover, setShowFilterCalendarPopover] = L.useState<boolean>(false),
+        
+        // Modais de Parcelas
+        [showGerarParcelasModal, setShowGerarParcelasModal] = L.useState<boolean>(false),
+        [newParcelasQtde, setNewParcelasQtde] = L.useState<number>(10),
+        [newParcelasValor, setNewParcelasValor] = L.useState<string>(""),
+        [newParcelasMesInicial, setNewParcelasMesInicial] = L.useState<string>(""),
+        [isGeneratingParcelas, setIsGeneratingParcelas] = L.useState<boolean>(false),
+        
+        [showBaixarParcelaModal, setShowBaixarParcelaModal] = L.useState<boolean>(false),
+        [selectedParcela, setSelectedParcela] = L.useState<any | null>(null),
+        [valorpagoInput, setValorpagoInput] = L.useState(""),
+        [datapagamentoInput, setDatapagamentoInput] = L.useState(""),
+        [isUpdatingParcela, setIsUpdatingParcela] = L.useState<boolean>(false),
+
+        // Exclusão de Parcela
+        [showDeleteParcelaConfirmModal, setShowDeleteParcelaConfirmModal] = L.useState<boolean>(false),
+        [parcelaToDelete, setParcelaToDelete] = L.useState<any | null>(null);
+
+        // Carregar pagamentos do consórcio selecionado
+        L.useEffect(() => {
+            if (!selectedConsorcioId) {
+                setSelectedPagamentos([]);
+                return;
+            }
+            const fetchPagamentos = async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('consorcios_pagamentos')
+                        .select('*')
+                        .eq('consorcio_id', selectedConsorcioId);
+                    if (error) throw error;
+                    setSelectedPagamentos(data || []);
+                } catch (err) {
+                    console.error('Erro ao buscar pagamentos:', err);
+                }
+            };
+            fetchPagamentos();
+        }, [selectedConsorcioId]);
+
+        // Limpar seleção de consórcio quando mudar o grupo selecionado
+        L.useEffect(() => {
+            setSelectedConsorcioId(null);
+        }, [Oe]); // Oe é selectedGrupoId
+
+        const formatCurrencyPTBR = (val: string | number) => {
+            const clean = String(val).replace(/\D/g, '');
+            if (!clean) return '';
+            const num = parseFloat(clean) / 100;
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(num);
+        };
+
+        // Gerar parcelas
+        const handleGerarParcelasSubmit = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!selectedConsorcioId || !newParcelasValor) return;
+            setIsGeneratingParcelas(true);
+            try {
+                const valParcela = parseFloat(newParcelasValor.replace(/\D/g, '')) / 100;
+                const installments = [];
+                const [initYear, initMonth] = newParcelasMesInicial.split('-').map(Number);
+                
+                // Obter dia de vencimento do consórcio selecionado
+                const consorcio = nt.find(c => c.id === selectedConsorcioId); // nt é consorciosList
+                const vencimentoDia = consorcio?.vencimentodia_number || 10;
+                const grupo = zt.find(g => g.id === Oe); // zt é gruposList, Oe é selectedGrupoId
+
+                const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+                for (let idx = 0; idx < newParcelasQtde; idx++) {
+                    const currentMonthIndex = (initMonth - 1 + idx) % 12;
+                    const yearOffset = Math.floor((initMonth - 1 + idx) / 12);
+                    const currentYear = initYear + yearOffset;
+                    
+                    const monthText = monthNames[currentMonthIndex];
+                    const yearText = String(currentYear).substring(2);
+                    const mesanoText = `${monthText}/${yearText}`;
+
+                    const dueDate = new Date(currentYear, currentMonthIndex, vencimentoDia, 12, 0, 0);
+
+                    installments.push({
+                        consorcio_id: selectedConsorcioId,
+                        grupo_id: Oe,
+                        grupo_text: grupo?.periodo_text || "",
+                        mesano_text: mesanoText,
+                        valor_parcela: valParcela,
+                        data_vencimento: dueDate.toISOString(),
+                        valorpago_number: null,
+                        datapagamento_date: null,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    });
+                }
+
+                const { error } = await supabase.from('consorcios_pagamentos').insert(installments);
+                if (error) throw error;
+
+                // Recarrega pagamentos
+                const { data, error: fetchErr } = await supabase
+                    .from('consorcios_pagamentos')
+                    .select('*')
+                    .eq('consorcio_id', selectedConsorcioId);
+                if (fetchErr) throw fetchErr;
+                setSelectedPagamentos(data || []);
+                setShowGerarParcelasModal(false);
+            } catch (err: any) {
+                console.error('Erro ao gerar parcelas:', err);
+                alert('Erro ao gerar parcelas: ' + err.message);
+            } finally {
+                setIsGeneratingParcelas(false);
+            }
+        };
+
+        // Baixar parcela
+        const handleBaixarParcelasSubmit = async (e: React.FormEvent) => {
+            e.preventDefault();
+            if (!selectedParcela || !selectedConsorcioId) return;
+            const valPago = parseFloat(valorpagoInput.replace(/\D/g, '')) / 100;
+            if (isNaN(valPago) || valPago < 0) {
+                alert('O valor pago deve ser igual ou maior que zero.');
+                return;
+            }
+            setIsUpdatingParcela(true);
+            try {
+                const datePagamento = datapagamentoInput ? `${datapagamentoInput}T12:00:00Z` : new Date().toISOString();
+                const { error } = await supabase
+                    .from('consorcios_pagamentos')
+                    .update({
+                        valorpago_number: valPago,
+                        datapagamento_date: datePagamento,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', selectedParcela.id);
+                if (error) throw error;
+
+                // Recarrega pagamentos
+                const { data, error: fetchErr } = await supabase
+                    .from('consorcios_pagamentos')
+                    .select('*')
+                    .eq('consorcio_id', selectedConsorcioId);
+                if (fetchErr) throw fetchErr;
+                setSelectedPagamentos(data || []);
+                setShowBaixarParcelaModal(false);
+            } catch (err: any) {
+                console.error('Erro ao baixar parcela:', err);
+                alert('Erro ao baixar parcela: ' + err.message);
+            } finally {
+                setIsUpdatingParcela(false);
+            }
+        };
+
+        // Estornar pagamento
+        const handleEstornarPagamento = async () => {
+            if (!selectedParcela || !selectedConsorcioId) return;
+            setIsUpdatingParcela(true);
+            try {
+                const { error } = await supabase
+                    .from('consorcios_pagamentos')
+                    .update({
+                        valorpago_number: null,
+                        datapagamento_date: null,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', selectedParcela.id);
+                if (error) throw error;
+
+                // Recarrega pagamentos
+                const { data, error: fetchErr } = await supabase
+                    .from('consorcios_pagamentos')
+                    .select('*')
+                    .eq('consorcio_id', selectedConsorcioId);
+                if (fetchErr) throw fetchErr;
+                setSelectedPagamentos(data || []);
+                setShowBaixarParcelaModal(false);
+            } catch (err: any) {
+                console.error('Erro ao estornar pagamento:', err);
+                alert('Erro ao estornar pagamento: ' + err.message);
+            } finally {
+                setIsUpdatingParcela(false);
+            }
+        };
+
+        // Excluir parcela
+        const executeDeleteParcela = async () => {
+            if (!parcelaToDelete || !selectedConsorcioId) return;
+            try {
+                const { error } = await supabase
+                    .from('consorcios_pagamentos')
+                    .delete()
+                    .eq('id', parcelaToDelete.id);
+                if (error) throw error;
+
+                // Recarrega pagamentos
+                const { data, error: fetchErr } = await supabase
+                    .from('consorcios_pagamentos')
+                    .select('*')
+                    .eq('consorcio_id', selectedConsorcioId);
+                if (fetchErr) throw fetchErr;
+                setSelectedPagamentos(data || []);
+                setShowDeleteParcelaConfirmModal(false);
+                setParcelaToDelete(null);
+            } catch (err: any) {
+                console.error('Erro ao excluir parcela:', err);
+                alert('Erro ao excluir parcela: ' + err.message);
+            }
+        };
+
+        const parseMesAnoText = (text: string) => {
+            if (!text) return null;
+            const parts = text.split('/');
+            if (parts.length !== 2) return null;
+            const [mStr, yStr] = parts;
+            const monthIdx = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mStr);
+            const yearVal = 2000 + parseInt(yStr);
+            if (monthIdx === -1 || isNaN(yearVal)) return null;
+            return { month: monthIdx, year: yearVal };
+        };
+
+        const sortedPagamentos = L.useMemo(() => {
+            return [...selectedPagamentos].sort((a, b) => {
+                const dateA = a.data_vencimento ? new Date(a.data_vencimento) : (a.datapagamento_date ? new Date(a.datapagamento_date) : new Date(0));
+                const dateB = b.data_vencimento ? new Date(b.data_vencimento) : (b.datapagamento_date ? new Date(b.datapagamento_date) : new Date(0));
+                return dateA.getTime() - dateB.getTime();
+            });
+        }, [selectedPagamentos]);
+
+        const getFullMonthName = (monthIdx: number) => {
+            return ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][monthIdx];
+        };
+
+        const fn = un.useMemo(() => {
+
             const S = fa.toLowerCase().trim(),
                 K = f.toLowerCase().trim();
             let Y = Ci;
@@ -2643,301 +2887,659 @@ const wl = AnimatePresence;
                                 duration: .4
                             },
                             className: "space-y-6",
-                            children: [p.jsxs("div", {
-                                className: "space-y-1 text-left",
-                                children: [p.jsx("h1", {
-                                    className: `text-3xl font-bold tracking-tight ${A.textPrimary}`,
-                                    children: "Consórcios"
-                                }), p.jsx("p", {
-                                    className: `text-sm ${A.textMuted}`,
-                                    children: "Visualize e gerencie as cotas de consórcios de equipamentos e suplementos."
-                                })]
-                            }), p.jsxs("div", {
-                                className: "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left",
-                                children: [p.jsxs("div", {
-                                    className: "col-span-12 lg:col-span-4 space-y-4",
-                                    children: [p.jsxs("div", {
-                                        className: "flex flex-wrap sm:flex-nowrap items-center justify-between gap-3",
-                                        children: [p.jsxs("div", {
-                                            className: "flex items-center gap-2",
-                                            children: [p.jsx("h2", {
-                                                className: `font-bold text-base whitespace-nowrap ${A.textPrimary}`,
-                                                children: cgf === "todos" ? "Todos os Grupos" : cgf === "ativos" ? "Grupos Ativos" : "Grupos Encerrados"
-                                            }), p.jsx("span", {
-                                                className: "px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-purple/10 text-brand-purple border border-brand-purple/20 flex-shrink-0",
-                                                children: ma.length
-                                            })]
-                                        }), p.jsxs("div", {
-                                            className: `flex items-center gap-0.5 p-0.5 rounded-full border ${r ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"} shadow-sm`,
-                                            children: [p.jsx("button", {
-                                                type: "button",
-                                                onClick: () => scgf("todos"),
-                                                className: `px-3.5 py-1 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${cgf==="todos"?"bg-brand-purple text-white shadow-md shadow-brand-purple/20":r?"text-slate-400 hover:text-slate-200":"text-[#64748B] hover:text-[#0F172A]"}`,
-                                                children: "Todos"
-                                            }), p.jsx("button", {
-                                                type: "button",
-                                                onClick: () => scgf("ativos"),
-                                                className: `px-3.5 py-1 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${cgf==="ativos"?"bg-brand-purple text-white shadow-md shadow-brand-purple/20":r?"text-slate-400 hover:text-slate-200":"text-[#64748B] hover:text-[#0F172A]"}`,
-                                                children: "Ativos"
-                                            }), p.jsx("button", {
-                                                type: "button",
-                                                onClick: () => scgf("encerrados"),
-                                                className: `px-3.5 py-1 rounded-full text-xs font-bold transition-all duration-200 cursor-pointer ${cgf==="encerrados"?"bg-brand-purple text-white shadow-md shadow-brand-purple/20":r?"text-slate-400 hover:text-slate-200":"text-[#64748B] hover:text-[#0F172A]"}`,
-                                                children: "Encerrados"
-                                            })]
-                                        })]
-                                    }), p.jsxs("div", {
-                                        className: "relative",
-                                        children: [p.jsx("span", {
-                                            className: "absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400",
-                                            children: p.jsx(Ja, {
-                                                size: 16
-                                            })
-                                        }), p.jsx("input", {
-                                            type: "text",
-                                            value: J,
-                                            onChange: S => se(S.target.value),
-                                            placeholder: "Buscar grupo...",
-                                            className: `w-full pl-10 pr-9 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
-                                        }), J && p.jsx("button", {
-                                            onClick: () => se(""),
-                                            className: "absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-brand-purple cursor-pointer",
-                                            children: p.jsx(Ms, {
-                                                size: 16,
-                                                className: "rotate-45"
-                                            })
-                                        })]
-                                    }), p.jsx("div", {
-                                        className: "space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto pr-1 min-h-[300px]",
-                                        children: ma.length === 0 ? p.jsxs("div", {
-                                            className: `p-8 text-center border ${A.card} rounded-[24px] shadow-sm`,
-                                            children: [p.jsx("span", {
-                                                className: `block font-bold text-sm ${A.textPrimary}`,
-                                                children: cgf === "todos" ? "Nenhum grupo" : cgf === "ativos" ? "Nenhum grupo ativo" : "Nenhum grupo encerrado"
-                                            }), p.jsx("span", {
-                                                className: `block text-xs ${A.textMuted} mt-1`,
-                                                children: Mn.length === 0 ? (cgf === "todos" ? "Não há grupos cadastrados." : cgf === "ativos" ? "Não há grupos ativos cadastrados." : "Não há grupos encerrados cadastrados.") : "Nenhum grupo corresponde à busca."
-                                            })]
-                                        }) : ma.map(S => {
-                                            const K = Oe === S.id,
-                                                Y = nt.filter(Z => Z.grupo_id === S.id).length;
-                                            return p.jsxs(Ut.div, {
-                                                onClick: () => P(S.id),
-                                                whileHover: {
-                                                    scale: 1.01
-                                                },
-                                                tabIndex: 0,
-                                                onKeyDown: (e) => {
-                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                        e.preventDefault();
-                                                        P(S.id);
-                                                    }
-                                                },
-                                                className: `border-2 cursor-pointer transition-all duration-200 px-3 py-[16px] mx-[6px] rounded-[24px] flex flex-col gap-1.5 bg-[#ffffff] focus:outline-none ${K?"border-brand-purple ring-2 ring-brand-purple/20":"border-[#dfdfdf] hover:border-brand-purple focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20"}`,
-                                                children: [p.jsxs("div", {
-                                                    className: "flex justify-between items-start",
-                                                    children: [p.jsx("h3", {
-                                                        className: "font-bold text-sm leading-snug text-[#0F172A]",
-                                                        children: S.periodo_text || "Sem nome"
-                                                    }), p.jsx("span", {
-                                                        className: `px-2 py-0.5 rounded text-[10px] font-bold ${S.encerrado_boolean ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`,
-                                                        children: S.encerrado_boolean ? "Encerrado" : "Ativo"
-                                                    })]
-                                                }), p.jsxs("div", {
-                                                    className: "mt-1.5 flex flex-col gap-1.5",
-                                                    children: [p.jsxs("div", {
-                                                        className: "flex items-center gap-1.5 text-xs font-semibold text-[#64748B] border-b border-dashed border-[#dfdfdf] pb-1.5",
-                                                        children: [p.jsx("span", {
-                                                            children: "Total Clientes:"
-                                                        }), p.jsx("span", {
-                                                            className: "font-bold text-[#0F172A]",
-                                                            children: Y
-                                                        })]
-                                                    }), p.jsxs("div", {
-                                                        className: "grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-semibold",
-                                                        children: [p.jsxs("div", {
-                                                            children: [p.jsx("p", {
-                                                                className: "text-[#64748B] text-[10px] uppercase tracking-wider",
-                                                                children: "Valor da Cota"
-                                                            }), p.jsx("p", {
-                                                                className: "text-sm font-bold text-brand-purple",
-                                                                children: new Intl.NumberFormat("pt-BR", {
-                                                                    style: "currency",
-                                                                    currency: "BRL"
-                                                                }).format(S.valorcota_number || 0)
-                                                            })]
-                                                        }), p.jsxs("div", {
-                                                            children: [p.jsx("p", {
-                                                                className: "text-[#64748B] text-[10px] uppercase tracking-wider",
-                                                                children: "Valor Mensal"
-                                                            }), p.jsx("p", {
-                                                                className: "text-sm font-bold text-[#0F172A]",
-                                                                children: new Intl.NumberFormat("pt-BR", {
-                                                                    style: "currency",
-                                                                    currency: "BRL"
-                                                                }).format(S.valor_number || 0)
-                                                            })]
-                                                        })]
-                                                    })]
-                                                })]
-                                            }, S.id)
-                                        })
-                                    })]
-                                }), p.jsx("div", {
-                                    className: "col-span-12 lg:col-span-8 space-y-4",
-                                    children: (() => {
-                                        const S = zt.find(K => K.id === Oe);
-                                        return p.jsxs(p.Fragment, {
-                                            children: [p.jsxs("div", {
-                                                className: "flex flex-col sm:flex-row sm:items-center justify-between gap-4",
-                                                children: [p.jsxs("div", {
-                                                    children: [p.jsx("h2", {
-                                                        className: `font-bold text-lg ${A.textPrimary}`,
-                                                        children: S ? `Clientes do Grupo: ${S.periodo_text}` : "Clientes do Grupo"
-                                                    }), p.jsx("p", {
-                                                        className: `text-xs ${A.textMuted}`,
-                                                        children: S ? "Visualizando a lista de clientes participantes do grupo." : "Selecione um grupo para visualizar os detalhes."
-                                                    })]
-                                                }), Oe && p.jsxs("div", {
-                                                    className: "relative w-full sm:w-[240px]",
-                                                    children: [p.jsx("span", {
-                                                        className: "absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400",
-                                                        children: p.jsx(Ja, {
-                                                            size: 16
-                                                        })
-                                                    }), p.jsx("input", {
-                                                        type: "text",
-                                                        value: ye,
-                                                        onChange: K => Se(K.target.value),
-                                                        placeholder: "Buscar cliente ou cota...",
-                                                        className: `w-full pl-10 pr-9 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
-                                                    }), ye && p.jsx("button", {
-                                                        onClick: () => Se(""),
-                                                        className: "absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-brand-purple cursor-pointer",
-                                                        children: p.jsx(Ms, {
-                                                            size: 16,
-                                                            className: "rotate-45"
-                                                        })
-                                                    })]
-                                                })]
-                                            }), p.jsx("div", {
-                                                className: `border ${A.card} rounded-[24px] overflow-hidden shadow-sm`,
-                                                children: p.jsx("div", {
-                                                    className: "overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]",
-                                                    children: p.jsxs("table", {
-                                                        className: "w-full text-left border-collapse text-sm",
-                                                        children: [p.jsx("thead", {
-                                                            children: p.jsxs("tr", {
-                                                                className: `border-b ${A.border} ${A.tableHeader}`,
-                                                                children: [p.jsx("th", {
-                                                                    className: "p-4 font-semibold uppercase tracking-wider text-xs text-center w-20",
-                                                                    children: "Nº Cota"
-                                                                }), p.jsx("th", {
-                                                                    className: "p-4 font-semibold uppercase tracking-wider text-xs",
-                                                                    children: "Cliente"
-                                                                })]
+                            children: [
+                                // Cabeçalho com Título e Filtro de Mês/Ano
+                                p.jsxs("div", {
+                                    className: "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-2 text-left w-full",
+                                    children: [
+                                        p.jsxs("div", {
+                                            className: "space-y-1",
+                                            children: [
+                                                p.jsx("h1", {
+                                                    className: `text-3xl font-bold tracking-tight ${A.textPrimary}`,
+                                                    children: "Consórcios"
+                                                }),
+                                                p.jsx("p", {
+                                                    className: `text-sm ${A.textMuted}`,
+                                                    children: "Visualize e gerencie as cotas de consórcios dos clientes"
+                                                })
+                                            ]
+                                        }),
+                                        // Filtro de Mês e Ano
+                                        p.jsxs("div", {
+                                            className: "relative inline-block",
+                                            children: [
+                                                p.jsxs("button", {
+                                                    onClick: () => setShowFilterCalendarPopover(!showFilterCalendarPopover),
+                                                    className: `flex items-center gap-2.5 px-4 py-2 text-xs font-semibold rounded-full border ${A.border} ${A.card} ${A.bgHover} ${A.textPrimary} transition-all shadow-sm cursor-pointer`,
+                                                    children: [
+                                                        p.jsx(SA, { size: 14, className: "text-[#64748B] flex-shrink-0" }),
+                                                        p.jsx("span", {
+                                                            className: A.textPrimary,
+                                                            children: isFilterActive ? p.jsxs(p.Fragment, {
+                                                                children: [
+                                                                    p.jsx("span", { className: "text-brand-purple font-bold", children: `01 - ${new Date(filterYear, filterMonth + 1, 0).getDate()} ` }),
+                                                                    `${["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"][filterMonth]} ${filterYear}`
+                                                                ]
+                                                            }) : "Todos os Períodos"
+                                                        }),
+                                                        p.jsx("svg", {
+                                                            className: `w-4 h-4 ml-1 text-slate-400 transition-transform ${showFilterCalendarPopover ? "rotate-180" : ""}`,
+                                                            fill: "none",
+                                                            stroke: "currentColor",
+                                                            viewBox: "0 0 24 24",
+                                                            children: p.jsx("path", {
+                                                                strokeLinecap: "round",
+                                                                strokeLinejoin: "round",
+                                                                strokeWidth: "2",
+                                                                d: "M19 9l-7 7-7-7"
                                                             })
-                                                        }), p.jsx("tbody", {
-                                                            children: Oe ? Di.length === 0 ? p.jsx("tr", {
-                                                                children: p.jsx("td", {
-                                                                    colSpan: 2,
-                                                                    className: "p-12 text-center text-slate-500 dark:text-slate-400",
-                                                                    children: p.jsxs("div", {
-                                                                        className: "flex flex-col items-center justify-center gap-2 max-w-sm mx-auto",
-                                                                        children: [p.jsx("div", {
-                                                                            className: "p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500",
-                                                                            children: p.jsx(Ch, {
-                                                                                size: 28
-                                                                            })
-                                                                        }), p.jsx("span", {
-                                                                            className: "font-bold text-base mt-2 text-slate-800 dark:text-slate-200",
-                                                                            children: "Nenhum cliente encontrado"
-                                                                        }), p.jsx("span", {
-                                                                            className: "text-xs opacity-75",
-                                                                            children: ga.length === 0 ? "Este grupo não possui clientes cadastrados." : "Nenhum cliente atende aos critérios de busca."
-                                                                        })]
-                                                                    })
+                                                        })
+                                                    ]
+                                                }),
+                                                showFilterCalendarPopover && p.jsx("div", {
+                                                    className: "fixed inset-0 z-40 cursor-default",
+                                                    onClick: () => setShowFilterCalendarPopover(false)
+                                                }),
+                                                showFilterCalendarPopover && p.jsxs(Ut.div, {
+                                                    initial: { opacity: 0, y: 10 },
+                                                    animate: { opacity: 1, y: 0 },
+                                                    exit: { opacity: 0, y: 10 },
+                                                    className: `absolute right-0 mt-2 w-72 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-4`,
+                                                    children: [
+                                                        // Seleção de Ano
+                                                        p.jsxs("div", {
+                                                            className: "flex items-center justify-between border-b border-dashed pb-2 border-slate-200 dark:border-slate-700/50",
+                                                            children: [
+                                                                p.jsx("button", {
+                                                                    type: "button",
+                                                                    onClick: () => setFilterYear(y => y - 1),
+                                                                    className: `p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`,
+                                                                    children: p.jsx(nv, { size: 16 })
+                                                                }),
+                                                                p.jsx("span", { className: `font-bold text-sm ${A.textPrimary}`, children: filterYear }),
+                                                                p.jsx("button", {
+                                                                    type: "button",
+                                                                    onClick: () => setFilterYear(y => y + 1),
+                                                                    className: `p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`,
+                                                                    children: p.jsx(sv, { size: 16 })
                                                                 })
-                                                            }) : Di.map((K, Y) => {
-                                                                var Z;
-                                                                return p.jsxs("tr", {
-                                                                    className: `border-b ${A.border} ${A.tableRowHover} transition-colors`,
-                                                                    children: [p.jsx("td", {
-                                                                        className: `p-4 text-xs font-bold text-center align-top ${A.textPrimary}`,
-                                                                        children: K.cotano_number ? String(K.cotano_number).padStart(2, "0") : "-"
-                                                                    }), p.jsxs("td", {
-                                                                        className: `p-4 ${A.textPrimary}`,
-                                                                        children: [p.jsxs("div", {
-                                                                            className: "flex items-center gap-2.5 font-bold text-sm",
-                                                                            children: [p.jsx(Ch, {
-                                                                                className: "text-brand-purple flex-shrink-0",
-                                                                                size: 16
-                                                                            }), ((Z = K.clientes) == null ? void 0 : Z.nome) || "Sem Cliente"]
-                                                                        }), p.jsxs("div", {
-                                                                            className: "flex flex-col gap-0.5 mt-1 pl-[26px]",
-                                                                            children: [((Z = K.clientes) == null ? void 0 : Z.outrasinformacoes) && p.jsx("div", {
-                                                                                className: "mb-0.5",
-                                                                                children: p.jsx("span", {
-                                                                                    className: "text-[10px] font-bold bg-[#7c3aed]/10 text-[#7c3aed] dark:bg-[#7c3aed]/20 dark:text-[#7c3aed] px-2 py-0.5 rounded border border-[#7c3aed]/20",
-                                                                                    children: (Z = K.clientes) == null ? void 0 : Z.outrasinformacoes
-                                                                                })
-                                                                            }), p.jsxs("div", {
-                                                                                    className: "flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] font-semibold text-[#64748B]",
+                                                            ]
+                                                        }),
+                                                        // Grade de Meses
+                                                        p.jsx("div", {
+                                                            className: "grid grid-cols-3 gap-1.5",
+                                                            children: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].map((mName, mIdx) => {
+                                                                const isSelected = isFilterActive && filterMonth === mIdx;
+                                                                return p.jsx("button", {
+                                                                    key: mName,
+                                                                    type: "button",
+                                                                    onClick: () => {
+                                                                        setFilterMonth(mIdx);
+                                                                        setIsFilterActive(true);
+                                                                        setShowFilterCalendarPopover(false);
+                                                                    },
+                                                                    className: `py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${isSelected ? "bg-brand-purple text-white shadow-md shadow-brand-purple/20" : `border border-transparent ${A.bgHover} ${A.textPrimary}`}`,
+                                                                    children: mName
+                                                                }, mName);
+                                                            })
+                                                        }),
+                                                        // Opção Limpar Filtro
+                                                        p.jsx("button", {
+                                                            type: "button",
+                                                            onClick: () => {
+                                                                setIsFilterActive(false);
+                                                                setShowFilterCalendarPopover(false);
+                                                            },
+                                                            className: `w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 transition-all cursor-pointer`,
+                                                            children: "Todos os Períodos"
+                                                        })
+                                                    ]
+                                                })
+                                            ]
+                                        })
+                                    ]
+                                }),
+                                // Grid Principal de 3 Colunas (Grupos, Clientes, Pagamentos)
+                                p.jsxs("div", {
+                                    className: "grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left",
+                                    children: [
+                                        // COLUNA 1: Grupos (size 3)
+                                        p.jsxs("div", {
+                                            className: "col-span-12 lg:col-span-3 space-y-4",
+                                            children: [
+                                                p.jsxs("div", {
+                                                    className: "flex items-center justify-between",
+                                                    children: [
+                                                        p.jsxs("div", {
+                                                            className: "flex items-center gap-1.5",
+                                                            children: [
+                                                                p.jsx("h2", {
+                                                                    className: `font-bold text-base whitespace-nowrap ${A.textPrimary}`,
+                                                                    children: cgf === "todos" ? "Todos os Grupos" : cgf === "ativos" ? "Grupos Ativos" : "Grupos Encerrados"
+                                                                }),
+                                                                p.jsx("span", {
+                                                                    className: "px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-purple/10 text-brand-purple border border-brand-purple/20 flex-shrink-0",
+                                                                    children: ma.length
+                                                                })
+                                                            ]
+                                                        }),
+                                                        p.jsxs("div", {
+                                                            className: `flex items-center gap-0.5 p-0.5 rounded-full border ${r ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"} shadow-sm`,
+                                                            children: [
+                                                                p.jsx("button", {
+                                                                    type: "button",
+                                                                    onClick: () => scgf("todos"),
+                                                                    className: `px-2.5 py-1 rounded-full text-[10px] font-bold transition-all duration-200 cursor-pointer ${cgf === "todos" ? "bg-brand-purple text-white shadow-md shadow-brand-purple/20" : r ? "text-slate-400 hover:text-slate-200" : "text-[#64748B] hover:text-[#0F172A]"}`,
+                                                                    children: "Todos"
+                                                                }),
+                                                                p.jsx("button", {
+                                                                    type: "button",
+                                                                    onClick: () => scgf("ativos"),
+                                                                    className: `px-2.5 py-1 rounded-full text-[10px] font-bold transition-all duration-200 cursor-pointer ${cgf === "ativos" ? "bg-brand-purple text-white shadow-md shadow-brand-purple/20" : r ? "text-slate-400 hover:text-slate-200" : "text-[#64748B] hover:text-[#0F172A]"}`,
+                                                                    children: "Ativos"
+                                                                })
+                                                            ]
+                                                        })
+                                                    ]
+                                                }),
+                                                p.jsxs("div", {
+                                                    className: "relative",
+                                                    children: [
+                                                        p.jsx("span", {
+                                                            className: "absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400",
+                                                            children: p.jsx(Ja, { size: 16 })
+                                                        }),
+                                                        p.jsx("input", {
+                                                            type: "text",
+                                                            value: J,
+                                                            onChange: S => se(S.target.value),
+                                                            placeholder: "Buscar grupo...",
+                                                            className: `w-full pl-10 pr-9 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                        }),
+                                                        J && p.jsx("button", {
+                                                            onClick: () => se(""),
+                                                            className: "absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-brand-purple cursor-pointer",
+                                                            children: p.jsx(Ms, { size: 16, className: "rotate-45" })
+                                                        })
+                                                    ]
+                                                }),
+                                                p.jsx("div", {
+                                                    className: "space-y-3 max-h-[calc(100vh-280px)] overflow-y-auto pr-1 min-h-[300px]",
+                                                    children: ma.length === 0 ? p.jsxs("div", {
+                                                        className: `p-8 text-center border ${A.card} rounded-[24px] shadow-sm`,
+                                                        children: [
+                                                            p.jsx("span", {
+                                                                className: `block font-bold text-sm ${A.textPrimary}`,
+                                                                children: cgf === "todos" ? "Nenhum grupo" : cgf === "ativos" ? "Nenhum grupo ativo" : "Nenhum grupo encerrado"
+                                                            }),
+                                                            p.jsx("span", {
+                                                                className: `block text-xs ${A.textMuted} mt-1`,
+                                                                children: "Nenhum grupo corresponde à busca."
+                                                            })
+                                                        ]
+                                                    }) : ma.map(S => {
+                                                        const isSelected = Oe === S.id;
+                                                        const clientCount = nt.filter(Z => Z.grupo_id === S.id).length;
+                                                        return p.jsxs(Ut.div, {
+                                                            onClick: () => P(S.id),
+                                                            whileHover: { scale: 1.01 },
+                                                            tabIndex: 0,
+                                                            onKeyDown: (e) => {
+                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                    e.preventDefault();
+                                                                    P(S.id);
+                                                                }
+                                                            },
+                                                            className: `border-2 cursor-pointer transition-all duration-200 px-3 py-[16px] mx-[6px] rounded-[24px] flex flex-col gap-1.5 bg-[#ffffff] focus:outline-none ${isSelected ? "border-brand-purple ring-2 ring-brand-purple/20" : "border-[#dfdfdf] hover:border-brand-purple focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20"}`,
+                                                            children: [
+                                                                p.jsxs("div", {
+                                                                    className: "flex justify-between items-start",
+                                                                    children: [
+                                                                        p.jsx("h3", {
+                                                                            className: "font-bold text-sm leading-snug text-[#0F172A]",
+                                                                            children: S.periodo_text || "Sem nome"
+                                                                        }),
+                                                                        p.jsx("span", {
+                                                                            className: `px-2 py-0.5 rounded text-[10px] font-bold ${S.encerrado_boolean ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700"}`,
+                                                                            children: S.encerrado_boolean ? "Encerrado" : "Ativo"
+                                                                        })
+                                                                    ]
+                                                                }),
+                                                                p.jsxs("div", {
+                                                                    className: "mt-1.5 flex flex-col gap-1.5",
+                                                                    children: [
+                                                                        p.jsxs("div", {
+                                                                            className: "flex items-center gap-1.5 text-xs font-semibold text-[#64748B] border-b border-dashed border-[#dfdfdf] pb-1.5",
+                                                                            children: [
+                                                                                p.jsx("span", { children: "Total Clientes:" }),
+                                                                                p.jsx("span", { className: "font-bold text-[#0F172A]", children: clientCount })
+                                                                            ]
+                                                                        }),
+                                                                        p.jsxs("div", {
+                                                                            className: "grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-semibold",
+                                                                            children: [
+                                                                                p.jsxs("div", {
                                                                                     children: [
-                                                                                        p.jsxs("span", {
-                                                                                            className: "flex items-center gap-1",
-                                                                                            children: [p.jsx("span", { className: "font-medium text-[#64748B]", children: "Retirada:" }), p.jsx("span", { className: "text-brand-purple font-bold", children: sc(K.dataretirada_date) })]
-                                                                                        }),
-                                                                                        p.jsx("span", { className: "text-[#dfdfdf]", children: "•" }),
-                                                                                        p.jsxs("span", {
-                                                                                            className: "flex items-center gap-1",
-                                                                                            children: [p.jsx("span", { className: "font-medium text-[#64748B]", children: "Vencimento:" }), p.jsx("span", { className: "text-[#0F172A] font-bold", children: K.vencimentodia_number ? `Dia ${K.vencimentodia_number}` : "-" })]
-                                                                                        }),
-                                                                                        K.mesretirada_text && p.jsxs(p.Fragment, {
-                                                                                            children: [
-                                                                                                p.jsx("span", { className: "text-[#dfdfdf]", children: "•" }),
-                                                                                                p.jsxs("span", {
-                                                                                                    className: "flex items-center gap-1",
-                                                                                                    children: [p.jsx("span", { className: "font-medium text-[#64748B]", children: "Mês Retirada:" }), p.jsx("span", { className: "text-brand-purple font-bold", children: K.mesretirada_text })]
-                                                                                                })
-                                                                                            ]
-                                                                                        })
+                                                                                        p.jsx("p", { className: "text-[#64748B] text-[10px] uppercase tracking-wider", children: "Valor Cota" }),
+                                                                                        p.jsx("p", { className: "text-xs font-bold text-brand-purple", children: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(S.valorcota_number || 0) })
+                                                                                    ]
+                                                                                }),
+                                                                                p.jsxs("div", {
+                                                                                    children: [
+                                                                                        p.jsx("p", { className: "text-[#64748B] text-[10px] uppercase tracking-wider", children: "Valor Mensal" }),
+                                                                                        p.jsx("p", { className: "text-xs font-bold text-[#0F172A]", children: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(S.valor_number || 0) })
                                                                                     ]
                                                                                 })
                                                                             ]
-                                                                        })]
-                                                                    })]
-                                                                }, K.id || Y)
-                                                            }) : p.jsx("tr", {
-                                                                children: p.jsx("td", {
-                                                                    colSpan: 2,
-                                                                    className: "p-12 text-center text-slate-500 dark:text-slate-400",
-                                                                    children: p.jsxs("div", {
-                                                                        className: "flex flex-col items-center justify-center gap-2 max-w-sm mx-auto",
-                                                                        children: [p.jsx("div", {
-                                                                            className: "p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500",
-                                                                            children: p.jsx(Ch, {
-                                                                                size: 28
+                                                                        })
+                                                                    ]
+                                                                })
+                                                            ]
+                                                        }, S.id);
+                                                    })
+                                                })
+                                            ]
+                                        }),
+                                        // COLUNA 2: Clientes do Grupo (size 5)
+                                        p.jsxs("div", {
+                                            className: "col-span-12 lg:col-span-5 space-y-4",
+                                            children: [
+                                                (() => {
+                                                    const activeGroup = zt.find(K => K.id === Oe);
+                                                    return p.jsxs(p.Fragment, {
+                                                        children: [
+                                                            p.jsxs("div", {
+                                                                className: "flex flex-col sm:flex-row sm:items-center justify-between gap-4",
+                                                                children: [
+                                                                    p.jsxs("div", {
+                                                                        children: [
+                                                                            p.jsx("h2", {
+                                                                                className: `font-bold text-base ${A.textPrimary}`,
+                                                                                children: activeGroup ? `Clientes: ${activeGroup.periodo_text}` : "Clientes do Grupo"
+                                                                            }),
+                                                                            p.jsx("p", {
+                                                                                className: `text-xs ${A.textMuted}`,
+                                                                                children: activeGroup ? "Clientes participantes deste grupo." : "Selecione um grupo."
                                                                             })
-                                                                        }), p.jsx("span", {
-                                                                            className: "font-bold text-base mt-2 text-slate-800 dark:text-slate-200",
-                                                                            children: "Selecione um grupo"
-                                                                        }), p.jsx("span", {
-                                                                            className: "text-xs opacity-75",
-                                                                            children: "Escolha um dos grupos ativos na coluna ao lado para visualizar os clientes."
-                                                                        })]
+                                                                        ]
+                                                                    }),
+                                                                    Oe && p.jsxs("div", {
+                                                                        className: "relative w-full sm:w-[200px]",
+                                                                        children: [
+                                                                            p.jsx("span", {
+                                                                                className: "absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400",
+                                                                                children: p.jsx(Ja, { size: 16 })
+                                                                            }),
+                                                                            p.jsx("input", {
+                                                                                type: "text",
+                                                                                value: ye,
+                                                                                onChange: K => Se(K.target.value),
+                                                                                placeholder: "Buscar...",
+                                                                                className: `w-full pl-10 pr-9 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                                            }),
+                                                                            ye && p.jsx("button", {
+                                                                                onClick: () => Se(""),
+                                                                                className: "absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-brand-purple cursor-pointer",
+                                                                                children: p.jsx(Ms, { size: 16, className: "rotate-45" })
+                                                                            })
+                                                                        ]
+                                                                    })
+                                                                ]
+                                                            }),
+                                                            p.jsx("div", {
+                                                                className: `border ${A.card} rounded-[24px] overflow-hidden shadow-sm`,
+                                                                children: p.jsx("div", {
+                                                                    className: "overflow-x-auto overflow-y-auto max-h-[calc(100vh-280px)]",
+                                                                    children: p.jsxs("table", {
+                                                                        className: "w-full text-left border-collapse text-sm",
+                                                                        children: [
+                                                                            p.jsx("thead", {
+                                                                                children: p.jsxs("tr", {
+                                                                                    className: `border-b ${A.border} ${A.tableHeader}`,
+                                                                                    children: [
+                                                                                        p.jsx("th", { className: "p-3 font-semibold uppercase tracking-wider text-[10px] text-center w-20", children: "Nº Cota" }),
+                                                                                        p.jsx("th", { className: "p-3 font-semibold uppercase tracking-wider text-[10px]", children: "Cliente" })
+                                                                                    ]
+                                                                                })
+                                                                            }),
+                                                                            p.jsx("tbody", {
+                                                                                children: Oe ? Di.length === 0 ? p.jsx("tr", {
+                                                                                    children: p.jsx("td", {
+                                                                                        colSpan: 2,
+                                                                                        className: "p-12 text-center text-slate-500 dark:text-slate-400",
+                                                                                        children: p.jsxs("div", {
+                                                                                            className: "flex flex-col items-center justify-center gap-2 max-w-sm mx-auto",
+                                                                                            children: [
+                                                                                                p.jsx("div", {
+                                                                                                    className: "p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500",
+                                                                                                    children: p.jsx(Ch, { size: 24 })
+                                                                                                }),
+                                                                                                p.jsx("span", { className: "font-bold text-xs mt-2 text-slate-800 dark:text-slate-200", children: "Nenhum cliente" })
+                                                                                            ]
+                                                                                        })
+                                                                                    })
+                                                                                }) : Di.map((K, Y) => {
+                                                                                    var Z;
+                                                                                    const isSelected = selectedConsorcioId === K.id;
+                                                                                    return p.jsxs("tr", {
+                                                                                        onClick: () => {
+                                                                                            setSelectedConsorcioId(K.id);
+                                                                                            setSelectedPagamentos([]);
+                                                                                            const clientName = K.clientes?.nome || "";
+                                                                                            setValorpagoInput(clientName); // Temporariamente guardado no estado cs/ca!
+                                                                                            ca(clientName);
+                                                                                        },
+                                                                                        className: `border-b ${A.border} ${A.tableRowHover} cursor-pointer transition-colors ${isSelected ? "bg-brand-purple/5" : ""}`,
+                                                                                        children: [
+                                                                                            p.jsx("td", {
+                                                                                                className: `p-3 text-xs font-bold text-center align-middle ${A.textPrimary}`,
+                                                                                                children: K.cotano_number ? String(K.cotano_number).padStart(2, "0") : "-"
+                                                                                            }),
+                                                                                            p.jsxs("td", {
+                                                                                                className: `p-3 ${A.textPrimary} align-middle`,
+                                                                                                children: [
+                                                                                                    p.jsxs("div", {
+                                                                                                        className: "flex items-center gap-2 font-bold text-xs",
+                                                                                                        children: [
+                                                                                                            p.jsx(Ch, { className: "text-brand-purple flex-shrink-0", size: 14 }),
+                                                                                                            ((Z = K.clientes) == null ? void 0 : Z.nome) || "Sem Cliente"
+                                                                                                        ]
+                                                                                                    }),
+                                                                                                    p.jsxs("div", {
+                                                                                                        className: "flex flex-col gap-0.5 mt-1 pl-[20px]",
+                                                                                                        children: [
+                                                                                                            ((Z = K.clientes) == null ? void 0 : Z.outrasinformacoes) && p.jsx("div", {
+                                                                                                                className: "mb-0.5",
+                                                                                                                children: p.jsx("span", {
+                                                                                                                    className: "text-[10px] font-bold bg-[#7c3aed]/10 text-[#7c3aed] dark:bg-[#7c3aed]/20 dark:text-[#7c3aed] px-2 py-0.5 rounded border border-[#7c3aed]/20",
+                                                                                                                    children: (Z = K.clientes) == null ? void 0 : Z.outrasinformacoes
+                                                                                                                })
+                                                                                                            }),
+                                                                                                            p.jsxs("div", {
+                                                                                                                className: "flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-[#64748B]",
+                                                                                                                children: [
+                                                                                                                    p.jsxs("span", { children: [p.jsx("span", { className: "font-medium", children: "Retirada: " }), p.jsx("span", { className: "text-brand-purple font-bold", children: sc(K.dataretirada_date) })] }),
+                                                                                                                    p.jsx("span", { className: "text-[#dfdfdf]", children: "•" }),
+                                                                                                                    p.jsxs("span", { children: [p.jsx("span", { className: "font-medium", children: "Venc: " }), p.jsx("span", { className: "text-[#0f172a] font-bold", children: K.vencimentodia_number ? `Dia ${K.vencimentodia_number}` : "-" })] }),
+                                                                                                                    K.mesretirada_text && p.jsxs(p.Fragment, {
+                                                                                                                        children: [
+                                                                                                                            p.jsx("span", { className: "text-[#dfdfdf]", children: "•" }),
+                                                                                                                            p.jsxs("span", { children: [p.jsx("span", { className: "font-medium", children: "Mês Ret.: " }), p.jsx("span", { className: "text-brand-purple font-bold", children: K.mesretirada_text })] })
+                                                                                                                        ]
+                                                                                                                    })
+                                                                                                                ]
+                                                                                                            })
+                                                                                                        ]
+                                                                                                    })
+                                                                                                ]
+                                                                                            })
+                                                                                        ]
+                                                                                    }, K.id || Y);
+                                                                                }) : p.jsx("tr", {
+                                                                                    children: p.jsx("td", {
+                                                                                        colSpan: 2,
+                                                                                        className: "p-12 text-center text-slate-500 dark:text-slate-400",
+                                                                                        children: p.jsxs("div", {
+                                                                                            className: "flex flex-col items-center justify-center gap-2 max-w-sm mx-auto",
+                                                                                            children: [
+                                                                                                p.jsx("div", {
+                                                                                                    className: "p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500",
+                                                                                                    children: p.jsx(Ch, { size: 28 })
+                                                                                                }),
+                                                                                                p.jsx("span", {
+                                                                                                    className: "font-bold text-base mt-2 text-slate-800 dark:text-slate-200",
+                                                                                                    children: "Selecione um grupo"
+                                                                                                }),
+                                                                                                p.jsx("span", {
+                                                                                                    className: "text-xs opacity-75",
+                                                                                                    children: "Escolha um dos grupos ativos na coluna ao lado para visualizar os clientes."
+                                                                                                })
+                                                                                            ]
+                                                                                        })
+                                                                                    })
+                                                                                })
+                                                                            })
+                                                                        ]
                                                                     })
                                                                 })
                                                             })
-                                                        })]
-                                                    })
-                                                })
-                                            })]
+                                                        ]
+                                                    });
+                                                })()
+                                            ]
+                                        }),
+                                        // COLUNA 3: Histórico de Pagamentos e Totais (size 4)
+                                        p.jsxs("div", {
+                                            className: "col-span-12 lg:col-span-4 space-y-4",
+                                            children: [
+                                                (() => {
+                                                    const payments = selectedPagamentos || [];
+                                                    const totalPago = payments.filter(item => !!item.datapagamento_date).reduce((acc, curr) => acc + (curr.valorpago_number !== null ? curr.valorpago_number : curr.valor_parcela || 0), 0);
+                                                    const totalAPagar = payments.filter(item => !item.datapagamento_date).reduce((acc, curr) => acc + (curr.valor_parcela || 0), 0);
+                                                    const saldo = totalPago - totalAPagar;
+                                                    const totalPagoCount = payments.filter(item => !!item.datapagamento_date).length;
+                                                    const totalAPagarCount = payments.filter(item => !item.datapagamento_date).length;
+
+                                                    return p.jsxs(p.Fragment, {
+                                                        children: [
+                                                            // Cabeçalho do Histórico
+                                                            p.jsxs("div", {
+                                                                className: "flex items-center justify-between gap-1",
+                                                                children: [
+                                                                    p.jsxs("div", {
+                                                                        className: "truncate",
+                                                                        children: [
+                                                                            p.jsxs("h2", {
+                                                                                className: `font-bold text-sm ${A.textPrimary} flex items-center flex-wrap gap-1.5 truncate`,
+                                                                                children: cs ? [
+                                                                                    "Histórico: ",
+                                                                                    p.jsx("span", {
+                                                                                        style: { backgroundColor: "rgba(124, 58, 237, 0.1)", color: "#7C3AED", fontSize: "12px" },
+                                                                                        className: "px-2 py-0.5 rounded-full font-bold inline-block border border-[#7C3AED]/20 truncate max-w-[120px]",
+                                                                                        children: cs
+                                                                                    })
+                                                                                ] : "Histórico de Pagamentos"
+                                                                            }),
+                                                                            p.jsx("p", {
+                                                                                className: `text-[10px] ${A.textMuted}`,
+                                                                                children: cs ? "Pagamentos da cota" : "Selecione uma cota."
+                                                                            })
+                                                                        ]
+                                                                    }),
+                                                                    selectedConsorcioId && p.jsxs("button", {
+                                                                        onClick: () => {
+                                                                            const activeGroup = zt.find(g => g.id === Oe);
+                                                                            const valMensal = activeGroup?.valor_number || 0;
+                                                                            setNewParcelasValor(formatCurrencyPTBR(valMensal * 100));
+                                                                            setNewParcelasQtde(10);
+                                                                            const d = new Date();
+                                                                            setNewParcelasMesInicial(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                                                                            setShowGerarParcelasModal(true);
+                                                                        },
+                                                                        className: "flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-lg transition-all shadow-sm shadow-brand-purple/10 flex-shrink-0 cursor-pointer",
+                                                                        children: [
+                                                                            p.jsx(SA, { size: 12 }),
+                                                                            "Gerar Parcelas"
+                                                                        ]
+                                                                    })
+                                                                ]
+                                                            }),
+                                                            // Tabela de Parcelas
+                                                            p.jsx("div", {
+                                                                className: `border ${A.card} rounded-[24px] overflow-hidden shadow-sm`,
+                                                                children: p.jsx("div", {
+                                                                    className: "overflow-x-auto overflow-y-auto max-h-[calc(100vh-360px)] min-h-[180px]",
+                                                                    children: selectedConsorcioId ? sortedPagamentos.length === 0 ? p.jsx("div", {
+                                                                        className: `p-8 text-center text-xs ${A.textMuted}`,
+                                                                        children: "Nenhuma parcela registrada. Clique em 'Gerar Parcelas' acima."
+                                                                    }) : p.jsxs("table", {
+                                                                        className: "w-full text-left border-collapse text-xs",
+                                                                        children: [
+                                                                            p.jsx("thead", {
+                                                                                children: p.jsxs("tr", {
+                                                                                    className: `border-b ${A.border} ${A.tableHeader}`,
+                                                                                    children: [
+                                                                                        p.jsx("th", { className: "p-2 font-semibold uppercase tracking-wider text-[9px]", children: "Ref" }),
+                                                                                        p.jsx("th", { className: "p-2 font-semibold uppercase tracking-wider text-[9px]", children: "A Pagar" }),
+                                                                                        p.jsx("th", { className: "p-2 font-semibold uppercase tracking-wider text-[9px]", children: "Pago" }),
+                                                                                        p.jsx("th", { className: "p-2 font-semibold uppercase tracking-wider text-[9px] text-right", children: "Ações" })
+                                                                                    ]
+                                                                                })
+                                                                            }),
+                                                                            p.jsx("tbody", {
+                                                                                children: sortedPagamentos.map((item, idx) => {
+                                                                                    const isPaid = !!item.datapagamento_date;
+                                                                                    const isOverdue = !isPaid && item.data_vencimento && new Date(item.data_vencimento).getTime() < new Date().setHours(0,0,0,0);
+                                                                                    
+                                                                                    const valParcelaFormatted = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.valor_parcela || 0);
+                                                                                    const valPagoFormatted = item.valorpago_number !== null ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(item.valorpago_number || 0) : "-";
+                                                                                    
+                                                                                    return p.jsxs("tr", {
+                                                                                        onClick: () => {
+                                                                                            setSelectedParcela(item);
+                                                                                            setValorpagoInput(item.valorpago_number !== null ? formatCurrencyPTBR(item.valorpago_number * 100) : formatCurrencyPTBR((item.valor_parcela || 0) * 100));
+                                                                                            setDatapagamentoInput(item.datapagamento_date ? item.datapagamento_date.substring(0, 10) : new Date().toISOString().substring(0, 10));
+                                                                                            setShowBaixarParcelaModal(true);
+                                                                                        },
+                                                                                        className: `border-b ${A.border} ${A.tableRowHover} cursor-pointer text-[10px] transition-colors`,
+                                                                                        children: [
+                                                                                            p.jsxs("td", {
+                                                                                                className: `p-2 font-bold ${A.textPrimary} flex items-center gap-1`,
+                                                                                                children: [
+                                                                                                    item.mesano_text || "-",
+                                                                                                    isOverdue && p.jsx("span", {
+                                                                                                        className: "w-2 h-2 rounded-full bg-rose-500 animate-pulse flex-shrink-0",
+                                                                                                        title: "Atrasado"
+                                                                                                    })
+                                                                                                ]
+                                                                                            }),
+                                                                                            p.jsx("td", { className: "p-2 font-bold text-[#7c3aed]", children: valParcelaFormatted }),
+                                                                                            p.jsx("td", {
+                                                                                                className: `p-2 ${isPaid ? "font-bold text-emerald-600 dark:text-emerald-400" : "font-semibold text-slate-400 dark:text-slate-500"}`,
+                                                                                                children: valPagoFormatted
+                                                                                            }),
+                                                                                            p.jsx("td", {
+                                                                                                className: "p-2 text-right",
+                                                                                                children: p.jsx("button", {
+                                                                                                    onClick: (e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        setParcelaToDelete(item);
+                                                                                                        setShowDeleteParcelaConfirmModal(true);
+                                                                                                    },
+                                                                                                    className: `p-1 rounded-lg ${A.bgHover} text-slate-400 hover:text-rose-600 transition-all cursor-pointer`,
+                                                                                                    title: "Excluir Parcela",
+                                                                                                    children: p.jsx(Trash2, { size: 12 })
+                                                                                                })
+                                                                                            })
+                                                                                        ]
+                                                                                    }, item.id || idx);
+                                                                                })
+                                                                            })
+                                                                        ]
+                                                                    }) : p.jsx("div", {
+                                                                        className: `p-8 text-center text-xs ${A.textMuted}`,
+                                                                        children: "Selecione uma cota para ver os pagamentos."
+                                                                    })
+                                                                })
+                                                            }),
+                                                            // Cards de Totais
+                                                            selectedConsorcioId && p.jsxs("div", {
+                                                                className: "grid grid-cols-3 gap-2 mt-4",
+                                                                children: [
+                                                                    // Card 1: A Pagar
+                                                                    p.jsxs(Ut.div, {
+                                                                        whileHover: { y: -3, scale: 1.01 },
+                                                                        className: "relative overflow-hidden p-3 border border-[#dfdfdf] bg-[#ffffff] rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-left",
+                                                                        children: [
+                                                                            p.jsxs("div", {
+                                                                                className: "flex justify-between items-start z-10 gap-1",
+                                                                                children: [
+                                                                                    p.jsx("span", { className: "text-[9px] xl:text-[10px] tracking-wider font-bold text-[#64748B] uppercase truncate", children: "A Pagar" }),
+                                                                                    p.jsx("div", { className: "w-6 h-6 rounded-full flex items-center justify-center bg-amber-50 text-amber-600 flex-shrink-0", children: p.jsx(SA, { size: 12 }) })
+                                                                                ]
+                                                                            }),
+                                                                            p.jsx("div", {
+                                                                                className: "my-1.5 z-10",
+                                                                                children: p.jsx("span", { className: "text-sm sm:text-base xl:text-lg font-bold tracking-tight text-[#0F172A] block truncate", children: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totalAPagar) })
+                                                                            }),
+                                                                            p.jsxs("div", {
+                                                                                className: "flex items-center gap-1 text-[9px] font-bold text-amber-600 z-10 truncate",
+                                                                                children: [
+                                                                                    p.jsx(SA, { size: 10 }),
+                                                                                    p.jsx("span", { className: "truncate", children: `${totalAPagarCount} aberta${totalAPagarCount === 1 ? "" : "s"}` })
+                                                                                ]
+                                                                            }),
+                                                                            p.jsx(SA, { size: 64, className: "absolute -right-2 -bottom-2 text-amber-500/5 pointer-events-none z-0" })
+                                                                        ]
+                                                                    }),
+                                                                    // Card 2: Pagos
+                                                                    p.jsxs(Ut.div, {
+                                                                        whileHover: { y: -3, scale: 1.01 },
+                                                                        className: "relative overflow-hidden p-3 border border-[#dfdfdf] bg-[#ffffff] rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-left",
+                                                                        children: [
+                                                                            p.jsxs("div", {
+                                                                                className: "flex justify-between items-start z-10 gap-1",
+                                                                                children: [
+                                                                                    p.jsx("span", { className: "text-[9px] xl:text-[10px] tracking-wider font-bold text-[#64748B] uppercase truncate", children: "Pagos" }),
+                                                                                    p.jsx("div", { className: "w-6 h-6 rounded-full flex items-center justify-center bg-emerald-50 text-emerald-600 flex-shrink-0", children: p.jsx(iv, { size: 12 }) })
+                                                                                ]
+                                                                            }),
+                                                                            p.jsx("div", {
+                                                                                className: "my-1.5 z-10",
+                                                                                children: p.jsx("span", { className: "text-sm sm:text-base xl:text-lg font-bold tracking-tight text-[#0F172A] block truncate", children: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(totalPago) })
+                                                                            }),
+                                                                            p.jsxs("div", {
+                                                                                className: "flex items-center gap-1 text-[9px] font-bold text-emerald-600 z-10 truncate",
+                                                                                children: [
+                                                                                    p.jsx(iv, { size: 10 }),
+                                                                                    p.jsx("span", { className: "truncate", children: `${totalPagoCount} paga${totalPagoCount === 1 ? "" : "s"}` })
+                                                                                ]
+                                                                            }),
+                                                                            p.jsx(iv, { size: 64, className: "absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" })
+                                                                        ]
+                                                                    }),
+                                                                    // Card 3: Saldo
+                                                                    p.jsxs(Ut.div, {
+                                                                        whileHover: { y: -3, scale: 1.01 },
+                                                                        className: "relative overflow-hidden p-3 border border-[#dfdfdf] bg-[#ffffff] rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-left",
+                                                                        children: [
+                                                                            p.jsxs("div", {
+                                                                                className: "flex justify-between items-start z-10 gap-1",
+                                                                                children: [
+                                                                                    p.jsx("span", { className: "text-[9px] xl:text-[10px] tracking-wider font-bold text-[#64748B] uppercase truncate", children: "Saldo" }),
+                                                                                    p.jsx("div", {
+                                                                                        className: `w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${saldo >= 0 ? "bg-cyan-50 text-cyan-600" : "bg-rose-50 text-rose-600"}`,
+                                                                                        children: saldo >= 0 ? p.jsx(Qi, { size: 12 }) : p.jsx(hA, { size: 12 })
+                                                                                    })
+                                                                                ]
+                                                                            }),
+                                                                            p.jsx("div", {
+                                                                                className: "my-1.5 z-10",
+                                                                                children: p.jsx("span", { className: "text-sm sm:text-base xl:text-lg font-bold tracking-tight text-[#0F172A] block truncate", children: new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(saldo) })
+                                                                            }),
+                                                                            p.jsxs("div", {
+                                                                                className: `flex items-center gap-1 text-[9px] font-bold z-10 truncate ${saldo >= 0 ? "text-cyan-600" : "text-rose-600"}`,
+                                                                                children: [
+                                                                                    saldo >= 0 ? p.jsx(Qi, { size: 10 }) : p.jsx(hA, { size: 10 }),
+                                                                                    p.jsx("span", { className: "truncate", children: saldo >= 0 ? "Positivo" : "Devedor" })
+                                                                                ]
+                                                                            }),
+                                                                            saldo >= 0 ? p.jsx(Qi, { size: 64, className: "absolute -right-2 -bottom-2 text-cyan-500/5 pointer-events-none z-0" }) : p.jsx(hA, { size: 64, className: "absolute -right-2 -bottom-2 text-rose-500/5 pointer-events-none z-0" })
+                                                                        ]
+                                                                    })
+                                                                ]
+                                                            })
+                                                        ]
+                                                    });
+                                                })()
+                                            ]
                                         })
-                                    })()
-                                })]
-                            })]
+                                    ]
+                                })
+                            ]
                         }, "consorcios"), t === "configuracoes" && p.jsxs(Ut.div, {
+
                             initial: {
                                 opacity: 0,
                                 y: 15
@@ -3273,7 +3875,227 @@ const wl = AnimatePresence;
                                     })
                                 })]
                             })]
-                        }, "configuracoes")]
+                        }, "configuracoes"),
+                        
+                        // Modais de Consórcios
+                        showGerarParcelasModal && p.jsx("div", {
+                            className: "fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+                            children: p.jsxs(motion.div, {
+                                initial: { scale: 0.95, opacity: 0 },
+                                animate: { scale: 1, opacity: 1 },
+                                className: `${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`,
+                                children: [
+                                    p.jsxs("div", {
+                                        className: "flex justify-between items-center mb-4",
+                                        children: [
+                                            p.jsx("h3", { className: `text-lg font-bold ${A.textPrimary}`, children: "Gerar Parcelas" }),
+                                            p.jsx("button", {
+                                                type: "button",
+                                                onClick: () => setShowGerarParcelasModal(false),
+                                                className: `p-1 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`,
+                                                children: p.jsx(Ms, { size: 16, className: "rotate-45" })
+                                            })
+                                        ]
+                                    }),
+                                    p.jsxs("form", {
+                                        onSubmit: handleGerarParcelasSubmit,
+                                        className: "space-y-4",
+                                        children: [
+                                            p.jsxs("div", {
+                                                className: "space-y-1",
+                                                children: [
+                                                    p.jsx("label", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Valor da Parcela" }),
+                                                    p.jsx("input", {
+                                                        type: "text",
+                                                        required: true,
+                                                        value: newParcelasValor,
+                                                        onChange: (e) => setNewParcelasValor(formatCurrencyPTBR(e.target.value)),
+                                                        className: `w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                    })
+                                                ]
+                                            }),
+                                            p.jsxs("div", {
+                                                className: "grid grid-cols-2 gap-4",
+                                                children: [
+                                                    p.jsxs("div", {
+                                                        className: "space-y-1",
+                                                        children: [
+                                                            p.jsx("label", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Quantidade" }),
+                                                            p.jsx("input", {
+                                                                type: "number",
+                                                                required: true,
+                                                                min: 1,
+                                                                max: 60,
+                                                                value: newParcelasQtde,
+                                                                onChange: (e) => setNewParcelasQtde(parseInt(e.target.value) || 10),
+                                                                className: `w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                            })
+                                                        ]
+                                                    }),
+                                                    p.jsxs("div", {
+                                                        className: "space-y-1",
+                                                        children: [
+                                                            p.jsx("label", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Mês de Início" }),
+                                                            p.jsx("input", {
+                                                                type: "month",
+                                                                required: true,
+                                                                value: newParcelasMesInicial,
+                                                                onChange: (e) => setNewParcelasMesInicial(e.target.value),
+                                                                className: `w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                            })
+                                                        ]
+                                                    })
+                                                ]
+                                            }),
+                                            p.jsxs("div", {
+                                                className: "flex justify-end gap-3 pt-2",
+                                                children: [
+                                                    p.jsx("button", {
+                                                        type: "button",
+                                                        onClick: () => setShowGerarParcelasModal(false),
+                                                        className: `px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`,
+                                                        children: "Cancelar"
+                                                    }),
+                                                    p.jsx("button", {
+                                                        type: "submit",
+                                                        disabled: isGeneratingParcelas,
+                                                        className: "px-4 py-2 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 disabled:opacity-50 cursor-pointer",
+                                                        children: isGeneratingParcelas ? "Gerando..." : "Gerar"
+                                                    })
+                                                ]
+                                            })
+                                        ]
+                                    })
+                                ]
+                            })
+                        }),
+                        showBaixarParcelaModal && selectedParcela && p.jsx("div", {
+                            className: "fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+                            children: p.jsxs(motion.div, {
+                                initial: { scale: 0.95, opacity: 0 },
+                                animate: { scale: 1, opacity: 1 },
+                                className: `${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`,
+                                children: [
+                                    p.jsxs("div", {
+                                        className: "flex justify-between items-center mb-4",
+                                        children: [
+                                            p.jsxs("h3", {
+                                                className: `text-lg font-bold ${A.textPrimary}`,
+                                                children: [selectedParcela.datapagamento_date ? "Estornar ou Editar" : "Baixar Parcela", " (", selectedParcela.mesano_text, ")"]
+                                            }),
+                                            p.jsx("button", {
+                                                type: "button",
+                                                onClick: () => setShowBaixarParcelaModal(false),
+                                                className: `p-1 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`,
+                                                children: p.jsx(Ms, { size: 16, className: "rotate-45" })
+                                            })
+                                        ]
+                                    }),
+                                    p.jsxs("form", {
+                                        onSubmit: handleBaixarParcelasSubmit,
+                                        className: "space-y-4",
+                                        children: [
+                                            p.jsxs("div", {
+                                                className: "space-y-1",
+                                                children: [
+                                                    p.jsx("label", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Valor Pago" }),
+                                                    p.jsx("input", {
+                                                        type: "text",
+                                                        required: true,
+                                                        value: valorpagoInput,
+                                                        onChange: (e) => setValorpagoInput(formatCurrencyPTBR(e.target.value)),
+                                                        className: `w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                    })
+                                                ]
+                                            }),
+                                            p.jsxs("div", {
+                                                className: "space-y-1",
+                                                children: [
+                                                    p.jsx("label", { className: "text-xs font-bold text-slate-500 uppercase tracking-wider", children: "Data de Pagamento" }),
+                                                    p.jsx("input", {
+                                                        type: "date",
+                                                        required: true,
+                                                        value: datapagamentoInput,
+                                                        onChange: (e) => setDatapagamentoInput(e.target.value),
+                                                        className: `w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`
+                                                    })
+                                                ]
+                                            }),
+                                            p.jsxs("div", {
+                                                className: "flex justify-between items-center pt-2 gap-2",
+                                                children: [
+                                                    selectedParcela.datapagamento_date ? p.jsx("button", {
+                                                        type: "button",
+                                                        onClick: handleEstornarPagamento,
+                                                        disabled: isUpdatingParcela,
+                                                        className: "px-4 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all disabled:opacity-50 cursor-pointer",
+                                                        children: "Estornar"
+                                                    }) : p.jsx("div", {}),
+                                                    p.jsxs("div", {
+                                                        className: "flex gap-2",
+                                                        children: [
+                                                            p.jsx("button", {
+                                                                type: "button",
+                                                                onClick: () => setShowBaixarParcelaModal(false),
+                                                                className: `px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`,
+                                                                children: "Cancelar"
+                                                            }),
+                                                            p.jsx("button", {
+                                                                type: "submit",
+                                                                disabled: isUpdatingParcela,
+                                                                className: "px-4 py-2 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 disabled:opacity-50 cursor-pointer",
+                                                                children: isUpdatingParcela ? "Gravando..." : "Confirmar"
+                                                            })
+                                                        ]
+                                                    })
+                                                ]
+                                            })
+                                        ]
+                                    })
+                                ]
+                            })
+                        }),
+                        showDeleteParcelaConfirmModal && parcelaToDelete && p.jsx("div", {
+                            className: "fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4",
+                            children: p.jsxs(motion.div, {
+                                initial: { scale: 0.95, opacity: 0 },
+                                animate: { scale: 1, opacity: 1 },
+                                className: `${A.card} w-full max-w-sm p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-center`,
+                                children: [
+                                    p.jsx("div", {
+                                        className: "w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4",
+                                        children: p.jsx(Trash2, { size: 24 })
+                                    }),
+                                    p.jsx("h3", { className: `text-lg font-bold ${A.textPrimary} mb-2`, children: "Excluir Parcela?" }),
+                                    p.jsxs("p", {
+                                        className: `text-xs ${A.textMuted} mb-6`,
+                                        children: [
+                                            "Tem certeza que deseja excluir permanentemente a parcela de referência ",
+                                            p.jsx("span", { className: "font-bold text-slate-800 dark:text-slate-200", children: parcelaToDelete.mesano_text }),
+                                            "? Esta ação não poderá ser desfeita."
+                                        ]
+                                    }),
+                                    p.jsxs("div", {
+                                        className: "flex justify-center gap-3",
+                                        children: [
+                                            p.jsx("button", {
+                                                type: "button",
+                                                onClick: () => setShowDeleteParcelaConfirmModal(false),
+                                                className: `px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`,
+                                                children: "Cancelar"
+                                            }),
+                                            p.jsx("button", {
+                                                type: "button",
+                                                onClick: executeDeleteParcela,
+                                                className: "px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-md shadow-rose-600/10 cursor-pointer",
+                                                children: "Excluir"
+                                            })
+                                        ]
+                                    })
+                                ]
+                            })
+                        })]
+
                     })
                 })]
             })]
