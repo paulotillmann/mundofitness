@@ -527,10 +527,15 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* COLUNA 1: Grupos (tamanho 3) */}
         <div className="col-span-12 lg:col-span-3 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className={`font-bold text-base whitespace-nowrap ${A.textPrimary}`}>
-              {gruposFilterType === 'todos' ? 'Todos os Grupos' : gruposFilterType === 'ativos' ? 'Grupos Ativos' : 'Grupos Encerrados'}
-            </h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2 className={`font-bold text-base whitespace-nowrap ${A.textPrimary}`}>
+                {gruposFilterType === 'todos' ? 'Todos os Grupos' : gruposFilterType === 'ativos' ? 'Grupos Ativos' : 'Grupos Encerrados'}
+              </h2>
+              <span className="text-xs font-bold bg-[#7c3aed]/10 text-[#7c3aed] dark:bg-[#7c3aed]/20 dark:text-[#7c3aed] px-2.5 py-1 rounded-full border border-[#7c3aed]/20 dark:border-[#7c3aed]/20">
+                {filteredGruposList.length} {filteredGruposList.length === 1 ? 'grupo' : 'grupos'}
+              </span>
+            </div>
             <div className={`flex items-center gap-0.5 p-0.5 rounded-lg border ${A.border} ${A.card} shadow-sm`}>
               <button
                 onClick={() => setGruposFilterType('ativos')}
