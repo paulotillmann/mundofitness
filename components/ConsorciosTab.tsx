@@ -664,97 +664,99 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             </div>
 
             {/* Tabela de Cotas */}
-            <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className={`border-b ${A.border} ${A.tableHeader}`}>
-                    <th className="p-3 font-semibold uppercase tracking-wider text-xs text-center w-20">Nº Cota</th>
-                    <th className="p-3 font-semibold uppercase tracking-wider text-xs">Cliente</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {!selectedGrupoId ? (
-                    <tr>
-                      <td colSpan={2} className="p-12 text-center text-slate-500">
-                        <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                          <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
-                            <Briefcase size={28} />
-                          </div>
-                          <span className="font-bold text-base mt-2 text-slate-800 dark:text-slate-200">
-                            Selecione um grupo
-                          </span>
-                          <span className="text-xs opacity-75">
-                            Escolha um dos grupos ativos na coluna ao lado para visualizar os clientes.
-                          </span>
-                        </div>
-                      </td>
+            <div className={`border ${A.border} rounded-2xl overflow-hidden`}>
+              <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className={`border-b ${A.border} ${A.tableHeader}`}>
+                      <th className="p-3 font-semibold uppercase tracking-wider text-xs text-center w-20">Nº Cota</th>
+                      <th className="p-3 font-semibold uppercase tracking-wider text-xs">Cliente</th>
                     </tr>
-                  ) : filteredConsorciosList.length === 0 ? (
-                    <tr>
-                      <td colSpan={2} className="p-12 text-center text-slate-500">
-                        <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                          <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
-                            <Briefcase size={24} />
+                  </thead>
+                  <tbody>
+                    {!selectedGrupoId ? (
+                      <tr>
+                        <td colSpan={2} className="p-12 text-center text-slate-500">
+                          <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                            <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
+                              <Briefcase size={28} />
+                            </div>
+                            <span className="font-bold text-base mt-2 text-slate-800 dark:text-slate-200">
+                              Selecione um grupo
+                            </span>
+                            <span className="text-xs opacity-75">
+                              Escolha um dos grupos ativos na coluna ao lado para visualizar os clientes.
+                            </span>
                           </div>
-                          <span className="font-bold text-xs mt-2 text-slate-800 dark:text-slate-200">
-                            Nenhum cliente cadastrado neste grupo
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredConsorciosList.map((c) => {
-                      const isSelected = selectedConsorcioId === c.id;
-                      const clientName = c.clientes?.nome || 'Sem Cliente';
+                        </td>
+                      </tr>
+                    ) : filteredConsorciosList.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="p-12 text-center text-slate-500">
+                          <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                            <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
+                              <Briefcase size={24} />
+                            </div>
+                            <span className="font-bold text-xs mt-2 text-slate-800 dark:text-slate-200">
+                              Nenhum cliente cadastrado neste grupo
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredConsorciosList.map((c) => {
+                        const isSelected = selectedConsorcioId === c.id;
+                        const clientName = c.clientes?.nome || 'Sem Cliente';
 
-                      return (
-                        <tr
-                          key={c.id}
-                          onClick={() => {
-                            if (selectedConsorcioId !== c.id) {
-                              setSelectedConsorcioId(c.id);
-                              setSelectedPagamentos([]);
-                              setSelectedClienteNome(clientName);
-                            }
-                          }}
-                          className={`border-b ${A.border} ${A.tableRowHover} cursor-pointer transition-colors ${isSelected ? 'bg-brand-purple/5' : ''
-                            }`}
-                        >
-                          <td className={`p-3 text-sm font-bold text-center align-middle ${A.textPrimary}`}>
-                            {c.cotano_number ? String(c.cotano_number).padStart(2, '0') : '-'}
-                          </td>
-                          <td className={`p-3 ${A.textPrimary} align-middle`}>
-                            <div className="flex items-center gap-2 font-bold text-sm">
-                              <Briefcase className="text-brand-purple flex-shrink-0" size={16} />
-                              {clientName}
-                            </div>
-                            <div className="flex flex-col gap-0.5 mt-1 pl-[20px]">
-                              {c.clientes?.outrasinformacoes && (
-                                <div className="mb-0.5">
-                                  <span className="text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded">
-                                    {c.clientes.outrasinformacoes}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-[#64748B]">
-                                <span>Retirada: <strong className="text-brand-purple font-bold">{formatRetiradaDate(c.dataretirada_date)}</strong></span>
-                                <span className="text-[#dfdfdf]">•</span>
-                                <span>Venc: <strong className="text-brand-purple font-bold">{c.vencimentodia_number ? `Dia ${c.vencimentodia_number}` : '-'}</strong></span>
-                                {c.mesretirada_text && (
-                                  <>
-                                    <span className="text-[#dfdfdf]">•</span>
-                                    <span>Mês Ret.: <strong className="text-brand-purple font-bold">{c.mesretirada_text}</strong></span>
-                                  </>
-                                )}
+                        return (
+                          <tr
+                            key={c.id}
+                            onClick={() => {
+                              if (selectedConsorcioId !== c.id) {
+                                setSelectedConsorcioId(c.id);
+                                setSelectedPagamentos([]);
+                                setSelectedClienteNome(clientName);
+                              }
+                            }}
+                            className={`border-b ${A.border} ${A.tableRowHover} cursor-pointer transition-colors ${isSelected ? 'bg-brand-purple/5' : ''
+                              }`}
+                          >
+                            <td className={`p-3 text-sm font-bold text-center align-middle ${A.textPrimary}`}>
+                              {c.cotano_number ? String(c.cotano_number).padStart(2, '0') : '-'}
+                            </td>
+                            <td className={`p-3 ${A.textPrimary} align-middle`}>
+                              <div className="flex items-center gap-2 font-bold text-sm">
+                                <Briefcase className="text-brand-purple flex-shrink-0" size={16} />
+                                {clientName}
                               </div>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                              <div className="flex flex-col gap-0.5 mt-1 pl-[20px]">
+                                {c.clientes?.outrasinformacoes && (
+                                  <div className="mb-0.5">
+                                    <span className="text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded">
+                                      {c.clientes.outrasinformacoes}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-[#64748B]">
+                                  <span>Retirada: <strong className="text-brand-purple font-bold">{formatRetiradaDate(c.dataretirada_date)}</strong></span>
+                                  <span className="text-[#dfdfdf]">•</span>
+                                  <span>Venc: <strong className="text-brand-purple font-bold">{c.vencimentodia_number ? `Dia ${c.vencimentodia_number}` : '-'}</strong></span>
+                                  {c.mesretirada_text && (
+                                    <>
+                                      <span className="text-[#dfdfdf]">•</span>
+                                      <span>Mês Ret.: <strong className="text-brand-purple font-bold">{c.mesretirada_text}</strong></span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
