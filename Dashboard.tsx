@@ -16,7 +16,9 @@ import {
   Bell,
   MessageSquare,
   LogOut,
-  ArrowUpRight
+  ArrowUpRight,
+  CreditCard,
+  History
 } from 'lucide-react';
 
 // Subcomponentes separados
@@ -25,6 +27,8 @@ import ClientesTab from './components/ClientesTab';
 import GruposTab from './components/GruposTab';
 import ConsorciosTab from './components/ConsorciosTab';
 import ConfiguracoesTab from './components/ConfiguracoesTab';
+import CrediariosTab from './components/CrediariosTab';
+import HistoricosTab from './components/HistoricosTab';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -40,35 +44,74 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [clientesList, setClientesList] = useState<any[]>([]);
   const [gruposList, setGruposList] = useState<any[]>([]);
   const [consorciosList, setConsorciosList] = useState<any[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  const fetchProfile = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        if (profile) {
+          setCurrentUser(profile);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar perfil do usuário atual:', err);
+    }
+  };
 
   // Carregar Clientes do Supabase
   const refreshClientes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('clientes')
-        .select('*')
-        .order('nome', { ascending: true });
-      if (error) {
-        console.error('Erro ao buscar clientes no Supabase:', error);
-        return;
+      let allData: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const to = from + step - 1;
+        const { data, error } = await supabase
+          .from('clientes')
+          .select('*')
+          .order('nome', { ascending: true })
+          .range(from, to);
+
+        if (error) {
+          console.error('Erro ao buscar clientes no Supabase:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < step) {
+            hasMore = false;
+          } else {
+            from += step;
+          }
+        } else {
+          hasMore = false;
+        }
       }
-      if (data) {
-        const formatted = data.map((c) => ({
-          id: c.id,
-          bubble_id: c.bubble_id,
-          name: c.nome,
-          phone: c.celular || '(00) 00000-0000',
-          email: c.email || '',
-          plan: c.plano || 'Básico',
-          status: c.status || 'Ativo',
-          endereco: c.endereco,
-          datanascimento: c.datanascimento,
-          outrasinformacoes: c.outrasinformacoes,
-          vestetamanho: c.vestetamanho,
-          data_cadastro: c.data_cadastro
-        }));
-        setClientesList(formatted);
-      }
+
+      const formatted = allData.map((c) => ({
+        id: c.id,
+        bubble_id: c.bubble_id,
+        name: c.nome,
+        phone: c.celular || '(00) 00000-0000',
+        email: c.email || '',
+        plan: c.plano || 'Básico',
+        status: c.status || 'Ativo',
+        endereco: c.endereco,
+        datanascimento: c.datanascimento,
+        outrasinformacoes: c.outrasinformacoes,
+        vestetamanho: c.vestetamanho,
+        data_cadastro: c.data_cadastro
+      }));
+      setClientesList(formatted);
     } catch (err) {
       console.error('Erro de conexão com o Supabase:', err);
     }
@@ -96,21 +139,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // Carregar Consórcios do Supabase
   const refreshConsorcios = async () => {
     try {
-      const { data, error } = await supabase
-        .from('consorcios')
-        .select(`
-          *,
-          clientes (nome, outrasinformacoes),
-          grupos (periodo_text, valorcota_number, encerrado_boolean)
-        `)
-        .order('created_at', { ascending: false });
-      if (error) {
-        console.error('Erro ao buscar consórcios no Supabase:', error);
-        return;
+      let allData: any[] = [];
+      let from = 0;
+      const step = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const to = from + step - 1;
+        const { data, error } = await supabase
+          .from('consorcios')
+          .select(`
+            *,
+            clientes (nome, outrasinformacoes, celular),
+            grupos (periodo_text, valorcota_number, encerrado_boolean)
+          `)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          console.error('Erro ao buscar consórcios no Supabase:', error);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          if (data.length < step) {
+            hasMore = false;
+          } else {
+            from += step;
+          }
+        } else {
+          hasMore = false;
+        }
       }
-      if (data) {
-        setConsorciosList(data);
-      }
+
+      setConsorciosList(allData);
     } catch (err) {
       console.error('Erro de conexão com o Supabase:', err);
     }
@@ -121,6 +184,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     refreshClientes();
     refreshGrupos();
     refreshConsorcios();
+    fetchProfile();
   }, []);
 
   // Cores do Tema (Objeto A)
@@ -153,11 +217,13 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'grupos', label: 'Grupos', icon: FolderHeart },
-    { id: 'consorcios', label: 'Consórcios', icon: DollarSign }
+    { id: 'consorcios', label: 'Consórcios', icon: DollarSign },
+    { id: 'crediarios', label: 'Crediários', icon: CreditCard },
+    { id: 'historico', label: 'Históricos', icon: History }
   ];
 
   return (
-    <div className={`flex h-screen overflow-hidden ${A.bg} transition-colors duration-300 font-sans`}>
+    <div className={`flex h-screen overflow-hidden ${A.bg} transition-colors duration-300 font-sans ${darkMode ? 'dark' : ''}`}>
       
       {/* SIDEBAR (Barra de Navegação Lateral) */}
       <div className={`relative flex flex-col justify-between py-6 border-r ${A.border} ${darkMode ? "bg-[#0F172A]" : "bg-white"} z-30 transition-all duration-300 ${
@@ -334,17 +400,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <div className={`h-6 w-px ${A.border}`} />
             
             <div className="flex items-center gap-3">
-              <img
-                src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150"
-                alt="Avatar Noah Miles"
-                className="w-10 h-10 rounded-full object-cover border border-brand-purple"
-              />
+              {currentUser?.foto_url ? (
+                <img
+                  src={currentUser.foto_url}
+                  alt={`Avatar ${currentUser.nome}`}
+                  className="w-10 h-10 rounded-full object-cover border border-brand-purple"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-brand-purple text-white font-bold flex items-center justify-center border border-brand-purple shadow-sm">
+                  {(currentUser?.nome || currentUser?.email || 'U').charAt(0).toUpperCase()}
+                </div>
+              )}
               <div className="hidden lg:block text-left">
                 <p className={`text-sm font-bold leading-none ${A.textPrimary}`}>
-                  Noah Miles
+                  {currentUser?.nome || 'Carregando...'}
                 </p>
                 <p className={`text-[10px] mt-0.5 ${A.textMuted}`}>
-                  Euclid Avenue, CA
+                  {currentUser?.email || ''}
                 </p>
               </div>
             </div>
@@ -383,6 +455,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 A={A}
                 gruposList={gruposList}
                 consorciosList={consorciosList}
+                clientesList={clientesList}
                 refreshConsorcios={refreshConsorcios}
               />
             )}
@@ -394,6 +467,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 refreshClientes={refreshClientes}
                 refreshGrupos={refreshGrupos}
                 refreshConsorcios={refreshConsorcios}
+                currentUser={currentUser}
+                refreshProfile={fetchProfile}
+              />
+            )}
+
+            {activeTab === 'crediarios' && (
+              <CrediariosTab
+                key="crediarios"
+                A={A}
+                globalSearch={globalSearch}
+              />
+            )}
+
+            {activeTab === 'historico' && (
+              <HistoricosTab
+                key="historico"
+                A={A}
+                globalSearch={globalSearch}
               />
             )}
           </AnimatePresence>

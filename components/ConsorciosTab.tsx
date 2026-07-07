@@ -12,7 +12,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Trash2
+  Trash2,
+  Edit2,
+  X
 } from 'lucide-react';
 
 interface Grupo {
@@ -38,6 +40,7 @@ interface Consorcio {
   clientes?: {
     nome: string;
     outrasinformacoes?: string;
+    celular?: string;
   };
   grupos?: {
     periodo_text: string;
@@ -64,6 +67,7 @@ interface ConsorciosTabProps {
   A: any;
   gruposList: Grupo[];
   consorciosList: Consorcio[];
+  clientesList: any[];
   refreshConsorcios: () => Promise<void>;
 }
 
@@ -71,6 +75,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
   A,
   gruposList,
   consorciosList,
+  clientesList,
   refreshConsorcios
 }) => {
   const isDark = A.bgLight === 'bg-slate-900';
@@ -79,6 +84,8 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
   const [selectedConsorcioId, setSelectedConsorcioId] = useState<string | null>(null);
   const [selectedPagamentos, setSelectedPagamentos] = useState<Parcela[]>([]);
   const [selectedClienteNome, setSelectedClienteNome] = useState(''); // cs no código original
+  const [grupoPagamentos, setGrupoPagamentos] = useState<Parcela[]>([]);
+  const [activeGroupsPagamentos, setActiveGroupsPagamentos] = useState<Parcela[]>([]);
 
   // Buscas locais
   const [searchGrupo, setSearchGrupo] = useState('');
@@ -106,6 +113,36 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
   const [showDeleteParcelaConfirmModal, setShowDeleteParcelaConfirmModal] = useState<boolean>(false);
   const [parcelaToDelete, setParcelaToDelete] = useState<Parcela | null>(null);
 
+  const [showOpenInstallmentsModal, setShowOpenInstallmentsModal] = useState<boolean>(false);
+
+  // Estados para edição e exclusão de Cota (Consórcio)
+  const [showEditCotaModal, setShowEditCotaModal] = useState<boolean>(false);
+  const [cotaToEdit, setCotaToEdit] = useState<Consorcio | null>(null);
+  const [editCotaNo, setEditCotaNo] = useState<string>('');
+  const [editCotaVencimentoDia, setEditCotaVencimentoDia] = useState<string>('');
+  const [editCotaDataRetirada, setEditCotaDataRetirada] = useState<string>('');
+  const [editCotaMesRetirada, setEditCotaMesRetirada] = useState<string>('');
+  const [isSavingCota, setIsSavingCota] = useState<boolean>(false);
+  const [showEditRetiradaMonthPopover, setShowEditRetiradaMonthPopover] = useState<boolean>(false);
+  const [editRetiradaYear, setEditRetiradaYear] = useState<number>(new Date().getFullYear());
+
+  const [showDeleteCotaConfirmModal, setShowDeleteCotaConfirmModal] = useState<boolean>(false);
+  const [cotaToDelete, setCotaToDelete] = useState<Consorcio | null>(null);
+  const [isDeletingCota, setIsDeletingCota] = useState<boolean>(false);
+
+  // Estados para inclusão de nova Cota (Consórcio)
+  const [showAddCotaModal, setShowAddCotaModal] = useState<boolean>(false);
+  const [newCotaClienteId, setNewCotaClienteId] = useState<string>('');
+  const [newCotaNo, setNewCotaNo] = useState<string>('');
+  const [newCotaVencimentoDia, setNewCotaVencimentoDia] = useState<string>('10');
+  const [newCotaDataRetirada, setNewCotaDataRetirada] = useState<string>('');
+  const [newCotaMesRetirada, setNewCotaMesRetirada] = useState<string>('');
+  const [isSavingNewCota, setIsSavingNewCota] = useState<boolean>(false);
+  const [clientSearchQuery, setClientSearchQuery] = useState<string>('');
+  const [showClientDropdown, setShowClientDropdown] = useState<boolean>(false);
+  const [showRetiradaMonthPopover, setShowRetiradaMonthPopover] = useState<boolean>(false);
+  const [retiradaYear, setRetiradaYear] = useState<number>(new Date().getFullYear());
+
   // Filtros de visualização dos grupos (cgf no Dashboard original)
   const [gruposFilterType, setGruposFilterType] = useState<'todos' | 'ativos' | 'encerrados'>('ativos');
 
@@ -123,6 +160,50 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
     }
   };
 
+  // Buscar pagamentos de todo o grupo selecionado
+  const fetchGrupoPagamentos = async (grupoId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('consorcios_pagamentos')
+        .select('*')
+        .eq('grupo_id', grupoId);
+      if (error) throw error;
+      setGrupoPagamentos(data || []);
+    } catch (err) {
+      console.error('Erro ao buscar pagamentos do grupo:', err);
+    }
+  };
+
+  // Buscar pagamentos de todos os grupos ativos
+  const fetchActiveGroupsPagamentos = async (activeIds: string[]) => {
+    if (activeIds.length === 0) {
+      setActiveGroupsPagamentos([]);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('consorcios_pagamentos')
+        .select('*')
+        .in('grupo_id', activeIds);
+      if (error) throw error;
+      setActiveGroupsPagamentos(data || []);
+    } catch (err) {
+      console.error('Erro ao buscar pagamentos dos grupos ativos:', err);
+    }
+  };
+
+  // Função auxiliar para atualizar todos os dados financeiros
+  const refreshAllTotals = async () => {
+    if (selectedConsorcioId) {
+      await fetchPagamentos(selectedConsorcioId);
+    }
+    if (selectedGrupoId) {
+      await fetchGrupoPagamentos(selectedGrupoId);
+    }
+    const activeIds = gruposList.filter((g) => !g.encerrado_boolean).map((g) => g.id);
+    await fetchActiveGroupsPagamentos(activeIds);
+  };
+
   useEffect(() => {
     if (!selectedConsorcioId) {
       setSelectedPagamentos([]);
@@ -136,6 +217,21 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
     setSelectedConsorcioId(null);
     setSelectedClienteNome('');
   }, [selectedGrupoId]);
+
+  // Carregar dados de pagamentos do grupo quando o grupo selecionado mudar
+  useEffect(() => {
+    if (selectedGrupoId) {
+      fetchGrupoPagamentos(selectedGrupoId);
+    } else {
+      setGrupoPagamentos([]);
+    }
+  }, [selectedGrupoId]);
+
+  // Carregar dados dos pagamentos dos grupos ativos
+  useEffect(() => {
+    const activeIds = gruposList.filter((g) => !g.encerrado_boolean).map((g) => g.id);
+    fetchActiveGroupsPagamentos(activeIds);
+  }, [gruposList]);
 
   // Formatar Moeda
   const formatCurrencyPTBR = (val: string | number) => {
@@ -229,7 +325,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
       const { error } = await supabase.from('consorcios_pagamentos').insert(installments);
       if (error) throw error;
 
-      await fetchPagamentos(selectedConsorcioId);
+      await refreshAllTotals();
       setShowGerarParcelasModal(false);
     } catch (err: any) {
       console.error('Erro ao gerar parcelas:', err);
@@ -261,7 +357,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
         .eq('id', selectedParcela.id);
       if (error) throw error;
 
-      await fetchPagamentos(selectedConsorcioId);
+      await refreshAllTotals();
       setShowBaixarParcelaModal(false);
     } catch (err: any) {
       console.error('Erro ao baixar parcela:', err);
@@ -286,7 +382,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
         .eq('id', selectedParcela.id);
       if (error) throw error;
 
-      await fetchPagamentos(selectedConsorcioId);
+      await refreshAllTotals();
       setShowBaixarParcelaModal(false);
     } catch (err: any) {
       console.error('Erro ao estornar pagamento:', err);
@@ -306,7 +402,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
         .eq('id', parcelaToDelete.id);
       if (error) throw error;
 
-      await fetchPagamentos(selectedConsorcioId);
+      await refreshAllTotals();
       setShowDeleteParcelaConfirmModal(false);
       setParcelaToDelete(null);
     } catch (err: any) {
@@ -314,6 +410,174 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
       alert('Erro ao excluir parcela: ' + err.message);
     }
   };
+
+  // Ações de Edição e Exclusão de Cota (Consórcio)
+  const handleEditCotaClick = (cota: Consorcio) => {
+    setCotaToEdit(cota);
+    setEditCotaNo(cota.cotano_number !== undefined && cota.cotano_number !== null ? String(cota.cotano_number) : '');
+    setEditCotaVencimentoDia(cota.vencimentodia_number !== undefined && cota.vencimentodia_number !== null ? String(cota.vencimentodia_number) : '');
+    setEditCotaDataRetirada(cota.dataretirada_date ? cota.dataretirada_date.substring(0, 10) : '');
+    setEditCotaMesRetirada(cota.mesretirada_text || '');
+    setShowEditRetiradaMonthPopover(false);
+
+    if (cota.mesretirada_text && cota.mesretirada_text.includes('/')) {
+      const parts = cota.mesretirada_text.split('/');
+      const yearPart = parseInt(parts[1]);
+      if (!isNaN(yearPart)) {
+        setEditRetiradaYear(2000 + yearPart);
+      } else {
+        setEditRetiradaYear(new Date().getFullYear());
+      }
+    } else {
+      setEditRetiradaYear(new Date().getFullYear());
+    }
+
+    setShowEditCotaModal(true);
+  };
+
+  const handleEditCotaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cotaToEdit) return;
+    setIsSavingCota(true);
+    try {
+      const dataRetirada = editCotaDataRetirada ? `${editCotaDataRetirada}T12:00:00Z` : null;
+      const { error } = await supabase
+        .from('consorcios')
+        .update({
+          dataretirada_date: dataRetirada,
+          mesretirada_text: editCotaMesRetirada || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', cotaToEdit.id);
+
+      if (error) throw error;
+
+      await refreshConsorcios();
+      setShowEditCotaModal(false);
+      setCotaToEdit(null);
+    } catch (err: any) {
+      console.error('Erro ao editar cota:', err);
+      alert('Erro ao editar cota: ' + err.message);
+    } finally {
+      setIsSavingCota(false);
+    }
+  };
+
+  const handleDeleteCotaClick = (cota: Consorcio) => {
+    const hasInstallments = grupoPagamentos.some((p) => p.consorcio_id === cota.id);
+    if (hasInstallments) {
+      alert('Não é possível excluir uma cota que possui parcelas.');
+      return;
+    }
+    setCotaToDelete(cota);
+    setShowDeleteCotaConfirmModal(true);
+  };
+
+  const executeDeleteCota = async () => {
+    if (!cotaToDelete) return;
+    setIsDeletingCota(true);
+    try {
+      const { error } = await supabase
+        .from('consorcios')
+        .delete()
+        .eq('id', cotaToDelete.id);
+      if (error) throw error;
+
+      await refreshConsorcios();
+
+      if (selectedConsorcioId === cotaToDelete.id) {
+        setSelectedConsorcioId(null);
+        setSelectedClienteNome('');
+      }
+
+      setShowDeleteCotaConfirmModal(false);
+      setCotaToDelete(null);
+    } catch (err: any) {
+      console.error('Erro ao excluir cota:', err);
+      alert('Erro ao excluir cota: ' + err.message);
+    } finally {
+      setIsDeletingCota(false);
+    }
+  };
+
+  // Ações de inclusão de cota
+  const handleAddCotaClick = () => {
+    setNewCotaClienteId('');
+    setClientSearchQuery('');
+    setShowClientDropdown(false);
+    setShowRetiradaMonthPopover(false);
+    setRetiradaYear(new Date().getFullYear());
+
+    // Calcular próxima cota da sequência
+    const existingCotaNumbers = filteredConsorciosList
+      .map((c) => c.cotano_number)
+      .filter((n): n is number => n !== undefined && n !== null);
+    const maxCota = existingCotaNumbers.length > 0 ? Math.max(...existingCotaNumbers) : 0;
+    setNewCotaNo(String(maxCota + 1));
+
+    setNewCotaVencimentoDia('10');
+    setNewCotaDataRetirada('');
+    setNewCotaMesRetirada('');
+    setShowAddCotaModal(true);
+  };
+
+  const handleAddCotaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedGrupoId || !newCotaClienteId || !newCotaNo || !newCotaVencimentoDia) {
+      alert('Por favor, selecione um cliente da lista.');
+      return;
+    }
+    setIsSavingNewCota(true);
+    try {
+      const dataRetirada = newCotaDataRetirada ? `${newCotaDataRetirada}T12:00:00Z` : null;
+      const { error } = await supabase
+        .from('consorcios')
+        .insert({
+          grupo_id: selectedGrupoId,
+          cliente_id: newCotaClienteId,
+          cotano_number: Number(newCotaNo),
+          vencimentodia_number: Number(newCotaVencimentoDia),
+          dataretirada_date: dataRetirada,
+          mesretirada_text: newCotaMesRetirada || null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      await refreshConsorcios();
+      setShowAddCotaModal(false);
+
+      // Resetar
+      setNewCotaClienteId('');
+      setClientSearchQuery('');
+      setNewCotaNo('');
+      setNewCotaVencimentoDia('10');
+      setNewCotaDataRetirada('');
+      setNewCotaMesRetirada('');
+    } catch (err: any) {
+      console.error('Erro ao incluir cota:', err);
+      alert('Erro ao incluir cota: ' + err.message);
+    } finally {
+      setIsSavingNewCota(false);
+    }
+  };
+
+  // Ordenar clientes em ordem alfabética para exibição no dropdown
+  const sortedClientes = useMemo(() => {
+    return [...clientesList].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB, 'pt-BR');
+    });
+  }, [clientesList]);
+
+  // Clientes filtrados de acordo com a busca no modal
+  const filteredSearchClientes = useMemo(() => {
+    const s = clientSearchQuery.toLowerCase().trim();
+    if (!s) return sortedClientes;
+    return sortedClientes.filter((cli) => (cli.name || '').toLowerCase().includes(s));
+  }, [sortedClientes, clientSearchQuery]);
 
   // Listagem de Grupos Ativos / Todos (Coluna 1)
   const filteredGruposList = useMemo(() => {
@@ -404,6 +668,81 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
       totalAPagarCount
     };
   }, [payments]);
+
+  // Helper de filtragem para data de pagamento (ou referência mesano_text se em aberto)
+  const itemMatchesFilter = (item: Parcela) => {
+    if (!isFilterActive) return true;
+    
+    // Se está paga, filtra pela data de pagamento
+    if (item.datapagamento_date) {
+      const date = new Date(item.datapagamento_date);
+      return date.getUTCMonth() === filterMonth && date.getUTCFullYear() === filterYear;
+    }
+    
+    // Se está em aberto (não paga), filtra pelo mesano_text (referência do mês/ano)
+    const parsed = parseMesAnoText(item.mesano_text);
+    return parsed && parsed.month === filterMonth && parsed.year === filterYear;
+  };
+
+  // Filtragem dos pagamentos do grupo selecionado
+  const filteredGrupoPagamentos = useMemo(() => {
+    return grupoPagamentos.filter(itemMatchesFilter);
+  }, [grupoPagamentos, isFilterActive, filterMonth, filterYear]);
+
+  // Totais do Grupo Selecionado
+  const grupoTotals = useMemo(() => {
+    const totalPago = filteredGrupoPagamentos
+      .filter((item) => !!item.datapagamento_date)
+      .reduce((acc, curr) => acc + (curr.valorpago_number !== null ? curr.valorpago_number : curr.valor_parcela || 0), 0);
+
+    const totalAPagar = filteredGrupoPagamentos
+      .filter((item) => !item.datapagamento_date)
+      .reduce((acc, curr) => acc + (curr.valor_parcela || 0), 0);
+
+    const totalPagoCount = filteredGrupoPagamentos.filter((item) => !!item.datapagamento_date).length;
+    const totalAPagarCount = filteredGrupoPagamentos.filter((item) => !item.datapagamento_date).length;
+
+    return {
+      totalPago,
+      totalAPagar,
+      totalPagoCount,
+      totalAPagarCount
+    };
+  }, [filteredGrupoPagamentos]);
+
+  // Filtragem dos pagamentos de todos os grupos ativos
+  const filteredActiveGroupsPagamentos = useMemo(() => {
+    return activeGroupsPagamentos.filter(itemMatchesFilter);
+  }, [activeGroupsPagamentos, isFilterActive, filterMonth, filterYear]);
+
+  // Totais de todos os Grupos Ativos
+  const activeGroupsTotals = useMemo(() => {
+    const totalPago = filteredActiveGroupsPagamentos
+      .filter((item) => !!item.datapagamento_date)
+      .reduce((acc, curr) => acc + (curr.valorpago_number !== null ? curr.valorpago_number : curr.valor_parcela || 0), 0);
+
+    const totalAPagar = filteredActiveGroupsPagamentos
+      .filter((item) => !item.datapagamento_date)
+      .reduce((acc, curr) => acc + (curr.valor_parcela || 0), 0);
+
+    const totalPagoCount = filteredActiveGroupsPagamentos.filter((item) => !!item.datapagamento_date).length;
+    const totalAPagarCount = filteredActiveGroupsPagamentos.filter((item) => !item.datapagamento_date).length;
+
+    return {
+      totalPago,
+      totalAPagar,
+      totalPagoCount,
+      totalAPagarCount
+    };
+  }, [filteredActiveGroupsPagamentos]);
+
+  // Rótulo dinâmico do período do filtro
+  const filterPeriodLabel = useMemo(() => {
+    if (!isFilterActive) return 'no total';
+    const monthStr = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][filterMonth];
+    const yearShort = String(filterYear).substring(2);
+    return `em ${monthStr}/${yearShort}`;
+  }, [isFilterActive, filterMonth, filterYear]);
 
   return (
     <motion.div
@@ -554,6 +893,63 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             </div>
           </div>
 
+          {/* Cards de Totais dos Grupos Ativos */}
+          <div className="grid grid-cols-2 gap-2 text-left">
+            {/* Card 1: Em Aberto */}
+            <motion.div
+              whileHover={{ y: -3, scale: 1.01 }}
+              className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+            >
+              <div className="flex justify-between items-start z-10 gap-1">
+                <span className="text-[10px] xl:text-[11px] tracking-wider font-bold text-[#64748B] uppercase truncate">
+                  Total Aberto (Ativos)
+                </span>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                  <Calendar size={12} />
+                </div>
+              </div>
+              <div className="my-1.5 z-10">
+                <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalAPagar)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
+                <Calendar size={12} />
+                <span className="truncate">
+                  {activeGroupsTotals.totalAPagarCount} aberta{activeGroupsTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
+                </span>
+              </div>
+              <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
+            </motion.div>
+
+            {/* Card 2: Pagos */}
+            <motion.div
+              whileHover={{ y: -3, scale: 1.01 }}
+              className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+            >
+              <div className="flex justify-between items-start z-10 gap-1">
+                <span className="text-[10px] xl:text-[11px] tracking-wider font-bold text-[#64748B] uppercase truncate">
+                  Total Pago (Ativos)
+                </span>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <CircleCheck size={12} />
+                </div>
+              </div>
+              <div className="my-1.5 z-10">
+                <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalPago)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
+                <CircleCheck size={12} />
+                <span className="truncate">
+                  {activeGroupsTotals.totalPagoCount} paga{activeGroupsTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
+                </span>
+              </div>
+              <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
+            </motion.div>
+          </div>
+
           <div className={`border ${A.card} rounded-[24px] p-4 space-y-3 shadow-sm`}>
             {/* Input de Busca de Grupo */}
             <div className="relative">
@@ -574,7 +970,15 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             {/* Listagem de Grupos */}
             <div className="space-y-1.5 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
               {filteredGruposList.length === 0 ? (
-                <div className={`p-6 text-center text-xs ${A.textMuted}`}>Nenhum grupo encontrado</div>
+                <div className="flex flex-col items-center justify-center p-8 text-center space-y-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-slate-800' : 'bg-slate-100'} text-slate-400`}>
+                    <FolderHeart size={18} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className={`text-xs font-bold ${A.textPrimary}`}>Nenhum grupo encontrado</p>
+                    <p className={`text-[10px] ${A.textMuted}`}>Tente mudar o filtro ou termo de busca.</p>
+                  </div>
+                </div>
               ) : (
                 filteredGruposList.map((g) => {
                   const isSelected = selectedGrupoId === g.id;
@@ -625,7 +1029,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
 
         {/* COLUNA 2: Cotas / Clientes do Grupo (tamanho 5) */}
         <div className="col-span-12 lg:col-span-5 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className={`font-bold text-base ${A.textPrimary} flex items-center flex-wrap gap-1.5`}>
               {selectedGrupoObj ? (
                 <>
@@ -641,10 +1045,82 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                 'Cotas do Grupo'
               )}
             </h2>
-            <span className="text-xs font-bold bg-[#7c3aed]/10 text-[#7c3aed] dark:bg-[#7c3aed]/20 dark:text-[#7c3aed] px-2.5 py-1 rounded-full border border-[#7c3aed]/20 dark:border-[#7c3aed]/20">
-              {filteredConsorciosList.length} clientes
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold bg-[#7c3aed]/10 text-[#7c3aed] dark:bg-[#7c3aed]/20 dark:text-[#7c3aed] px-2.5 py-1 rounded-full border border-[#7c3aed]/20 dark:border-[#7c3aed]/20">
+                {filteredConsorciosList.length} clientes
+              </span>
+              {selectedGrupoId && (
+                <button
+                  type="button"
+                  onClick={handleAddCotaClick}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-lg transition-all shadow-sm shadow-brand-purple/10 cursor-pointer"
+                >
+                  <Plus size={14} />
+                  Incluir Cliente
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Cards de Totais do Grupo Selecionado */}
+          {selectedGrupoId && (
+            <div className="grid grid-cols-2 gap-2 text-left">
+              {/* Card 1: Em Aberto */}
+              <motion.div
+                whileHover={{ y: -3, scale: 1.01 }}
+                onClick={() => setShowOpenInstallmentsModal(true)}
+                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 cursor-pointer ${A.card}`}
+              >
+                <div className="flex justify-between items-start z-10 gap-1">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                    Em Aberto (Grupo)
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                    <Calendar size={12} />
+                  </div>
+                </div>
+                <div className="my-1.5 z-10">
+                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalAPagar)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
+                  <Calendar size={12} />
+                  <span className="truncate">
+                    {grupoTotals.totalAPagarCount} aberta{grupoTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
+                  </span>
+                </div>
+                <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
+              </motion.div>
+
+              {/* Card 2: Pagos */}
+              <motion.div
+                whileHover={{ y: -3, scale: 1.01 }}
+                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+              >
+                <div className="flex justify-between items-start z-10 gap-1">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                    Pagos (Grupo)
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <CircleCheck size={12} />
+                  </div>
+                </div>
+                <div className="my-1.5 z-10">
+                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalPago)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
+                  <CircleCheck size={12} />
+                  <span className="truncate">
+                    {grupoTotals.totalPagoCount} paga{grupoTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
+                  </span>
+                </div>
+                <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
+              </motion.div>
+            </div>
+          )}
 
           <div className={`border ${A.card} rounded-[24px] p-4 space-y-3 shadow-sm`}>
             {/* Input de Busca de Cota */}
@@ -671,35 +1147,47 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                     <tr className={`border-b ${A.border} ${A.tableHeader}`}>
                       <th className="p-3 font-semibold uppercase tracking-wider text-xs text-center w-20">Nº Cota</th>
                       <th className="p-3 font-semibold uppercase tracking-wider text-xs">Cliente</th>
+                      <th className="p-3 font-semibold uppercase tracking-wider text-xs text-right w-24">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!selectedGrupoId ? (
                       <tr>
-                        <td colSpan={2} className="p-12 text-center text-slate-500">
-                          <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                            <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
-                              <Briefcase size={28} />
+                        <td colSpan={3} className="p-10 text-center">
+                          <div className="flex flex-col items-center justify-center py-6 space-y-3 max-w-xs mx-auto">
+                            <motion.div
+                              initial={{ scale: 0.8, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              className={`w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                            >
+                              <Briefcase size={22} />
+                            </motion.div>
+                            <div className="space-y-1">
+                              <h4 className={`font-bold text-xs ${A.textPrimary}`}>Selecione um grupo</h4>
+                              <p className={`text-[11px] ${A.textMuted} leading-relaxed`}>
+                                Escolha um dos grupos na coluna lateral para gerenciar as cotas dos clientes.
+                              </p>
                             </div>
-                            <span className="font-bold text-base mt-2 text-slate-800 dark:text-slate-200">
-                              Selecione um grupo
-                            </span>
-                            <span className="text-xs opacity-75">
-                              Escolha um dos grupos ativos na coluna ao lado para visualizar os clientes.
-                            </span>
                           </div>
                         </td>
                       </tr>
                     ) : filteredConsorciosList.length === 0 ? (
                       <tr>
-                        <td colSpan={2} className="p-12 text-center text-slate-500">
-                          <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
-                            <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
-                              <Briefcase size={24} />
+                        <td colSpan={3} className="p-10 text-center">
+                          <div className="flex flex-col items-center justify-center py-6 space-y-3 max-w-xs mx-auto">
+                            <motion.div
+                              initial={{ scale: 0.8, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              className={`w-12 h-12 rounded-full flex items-center justify-center ${isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                            >
+                              <Briefcase size={22} className="opacity-60" />
+                            </motion.div>
+                            <div className="space-y-1">
+                              <h4 className={`font-bold text-xs ${A.textPrimary}`}>Sem cotas ativas</h4>
+                              <p className={`text-[11px] ${A.textMuted} leading-relaxed`}>
+                                Não há clientes cadastrados ou ativos neste grupo de consórcio.
+                              </p>
                             </div>
-                            <span className="font-bold text-xs mt-2 text-slate-800 dark:text-slate-200">
-                              Nenhum cliente cadastrado neste grupo
-                            </span>
                           </div>
                         </td>
                       </tr>
@@ -707,6 +1195,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                       filteredConsorciosList.map((c) => {
                         const isSelected = selectedConsorcioId === c.id;
                         const clientName = c.clientes?.nome || 'Sem Cliente';
+                        const hasInstallments = grupoPagamentos.some((p) => p.consorcio_id === c.id);
 
                         return (
                           <tr
@@ -731,8 +1220,12 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                               </div>
                               <div className="flex flex-col gap-0.5 mt-1 pl-[20px]">
                                 {c.clientes?.outrasinformacoes && (
-                                  <div className="mb-0.5">
-                                    <span className="text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded">
+                                  <div className="mb-1">
+                                    <span className={`inline-block text-[10px] font-normal px-1.5 py-0.5 rounded-md ${
+                                      isDark 
+                                        ? 'bg-[#334155] text-slate-300' 
+                                        : 'bg-[#f1f5f9] text-slate-700'
+                                    }`}>
                                       {c.clientes.outrasinformacoes}
                                     </span>
                                   </div>
@@ -748,6 +1241,31 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                                     </>
                                   )}
                                 </div>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right align-middle" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditCotaClick(c)}
+                                  className={`p-1.5 rounded-lg ${A.bgHover} text-slate-400 hover:text-brand-purple transition-all cursor-pointer`}
+                                  title="Editar Cota"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCotaClick(c)}
+                                  disabled={hasInstallments}
+                                  className={`p-1.5 rounded-lg ${
+                                    hasInstallments
+                                      ? 'opacity-30 cursor-not-allowed text-slate-300 dark:text-slate-600'
+                                      : `${A.bgHover} text-slate-400 hover:text-rose-600 transition-all cursor-pointer`
+                                  }`}
+                                  title={hasInstallments ? 'Não é possível excluir cota com parcelas' : 'Excluir Cota'}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -780,9 +1298,6 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                   'Histórico de Pagamentos'
                 )}
               </h2>
-              <p className={`text-[10px] ${A.textMuted}`}>
-                {selectedClienteNome ? 'Pagamentos da cota selecionada.' : 'Selecione uma cota.'}
-              </p>
             </div>
             {selectedConsorcioId && (
               <button
@@ -803,16 +1318,107 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             )}
           </div>
 
+          {/* Cards de Totais Financeiros */}
+          {selectedConsorcioId && (
+            <div className="grid grid-cols-2 gap-2 text-left">
+              {/* Card 1: A Pagar */}
+              <motion.div
+                whileHover={{ y: -3, scale: 1.01 }}
+                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+              >
+                <div className="flex justify-between items-start z-10 gap-1">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                    A Pagar
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                    <Calendar size={12} />
+                  </div>
+                </div>
+                <div className="my-1.5 z-10">
+                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalAPagar)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
+                  <Calendar size={12} />
+                  <span className="truncate">
+                    {totals.totalAPagarCount} aberta{totals.totalAPagarCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
+              </motion.div>
+
+              {/* Card 2: Pagos */}
+              <motion.div
+                whileHover={{ y: -3, scale: 1.01 }}
+                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+              >
+                <div className="flex justify-between items-start z-10 gap-1">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                    Pagos
+                  </span>
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                    <CircleCheck size={12} />
+                  </div>
+                </div>
+                <div className="my-1.5 z-10">
+                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalPago)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
+                  <CircleCheck size={12} />
+                  <span className="truncate">
+                    {totals.totalPagoCount} paga{totals.totalPagoCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
+              </motion.div>
+            </div>
+          )}
+
           {/* Tabela de Parcelas */}
           <div className={`border ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
             <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-360px)] min-h-[180px]">
               {!selectedConsorcioId ? (
-                <div className={`p-8 text-center text-sm ${A.textMuted}`}>
-                  Selecione uma cota para ver os pagamentos.
+                <div className="flex flex-col items-center justify-center p-10 text-center min-h-[220px] space-y-4">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                      isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    <Briefcase size={24} />
+                  </motion.div>
+                  <div className="max-w-xs space-y-1">
+                    <h3 className={`text-sm font-bold tracking-tight ${A.textPrimary}`}>
+                      Selecione uma cota
+                    </h3>
+                    <p className={`text-xs ${A.textMuted} leading-relaxed`}>
+                      Escolha uma cota de cliente na tabela ao lado para visualizar e gerenciar o histórico de pagamentos.
+                    </p>
+                  </div>
                 </div>
               ) : sortedPagamentos.length === 0 ? (
-                <div className={`p-8 text-center text-sm ${A.textMuted}`}>
-                  Nenhuma parcela registrada. Clique em 'Gerar Parcelas' acima.
+                <div className="flex flex-col items-center justify-center p-10 text-center min-h-[220px] space-y-4">
+                  <motion.div
+                    initial={{ scale: 0.8, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                      isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-500'
+                    }`}
+                  >
+                    <Calendar size={24} />
+                  </motion.div>
+                  <div className="max-w-xs space-y-1">
+                    <h3 className={`text-sm font-bold tracking-tight ${A.textPrimary}`}>
+                      Sem parcelas geradas
+                    </h3>
+                    <p className={`text-xs ${A.textMuted} leading-relaxed`}>
+                      Nenhum cronograma de pagamento encontrado para esta cota. Clique em <strong className="text-brand-purple font-bold">Gerar Parcelas</strong> para iniciar.
+                    </p>
+                  </div>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse text-xs">
@@ -900,64 +1506,6 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             </div>
           </div>
 
-          {/* Cards de Totais Financeiros */}
-          {selectedConsorcioId && (
-            <div className="grid grid-cols-2 gap-2 mt-4 text-left">
-              {/* Card 1: A Pagar */}
-              <motion.div
-                whileHover={{ y: -3, scale: 1.01 }}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
-              >
-                <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
-                    A Pagar
-                  </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
-                    <Calendar size={12} />
-                  </div>
-                </div>
-                <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalAPagar)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
-                  <Calendar size={12} />
-                  <span className="truncate">
-                    {totals.totalAPagarCount} aberta{totals.totalAPagarCount === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
-              </motion.div>
-
-              {/* Card 2: Pagos */}
-              <motion.div
-                whileHover={{ y: -3, scale: 1.01 }}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
-              >
-                <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
-                    Pagos
-                  </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
-                    <CircleCheck size={12} />
-                  </div>
-                </div>
-                <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalPago)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
-                  <CircleCheck size={12} />
-                  <span className="truncate">
-                    {totals.totalPagoCount} paga{totals.totalPagoCount === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
-              </motion.div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1158,6 +1706,579 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                 Excluir
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL: DETALHES DE PARCELAS EM ABERTO */}
+      {showOpenInstallmentsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={`${A.card} w-full max-w-lg p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-dashed pb-3 border-slate-200 dark:border-slate-700/50">
+              <div>
+                <h3 className={`text-lg font-bold ${A.textPrimary}`}>Parcelas em Aberto (Grupo)</h3>
+                <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                  Grupo: <strong className="text-brand-purple">{selectedGrupoObj?.periodo_text || ''}</strong> {filterPeriodLabel}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowOpenInstallmentsModal(false)}
+                className={`p-1.5 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {filteredGrupoPagamentos.filter((item) => !item.datapagamento_date).length === 0 ? (
+                <p className={`text-sm ${A.textMuted} text-center py-6`}>
+                  Nenhuma parcela em aberto encontrada para este período.
+                </p>
+              ) : (
+                filteredGrupoPagamentos
+                  .filter((item) => !item.datapagamento_date)
+                  .map((item) => {
+                    const consorcio = consorciosList.find((c) => c.id === item.consorcio_id);
+                    const clientName = consorcio?.clientes?.nome || 'Sem Cliente';
+                    const outrasInfo = consorcio?.clientes?.outrasinformacoes || '';
+                    const phone = consorcio?.clientes?.celular || '';
+                    const isOverdue =
+                      item.data_vencimento &&
+                      new Date(item.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0);
+
+                    // Formatar celular para link do WhatsApp se existir
+                    const formattedPhone = phone ? phone.replace(/\D/g, '') : '';
+                    const whatsappUrl = formattedPhone 
+                      ? `https://wa.me/55${formattedPhone}` 
+                      : '#';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-4 rounded-2xl border ${A.border} flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isOverdue 
+                            ? 'border-rose-200 bg-rose-50/5 dark:border-rose-950/30' 
+                            : ''
+                        }`}
+                      >
+                        <div className="space-y-1.5 text-left">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-bold text-sm ${A.textPrimary}`}>{clientName}</span>
+                            {isOverdue && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400">
+                                Atrasado
+                              </span>
+                            )}
+                          </div>
+                          
+                          {outrasInfo && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              <span className="font-semibold text-slate-400">Obs:</span> {outrasInfo}
+                            </p>
+                          )}
+
+                          {phone ? (
+                            <a
+                              href={whatsappUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-purple hover:underline"
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
+                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.864-9.799.002-2.63-1.023-5.101-2.885-6.963C16.588 2.01 14.12 1.01 11.49 1.01 6.05 1.01 1.625 5.378 1.62 10.81c-.001 1.716.452 3.39 1.311 4.877L1.97 20.082l4.677-1.228zM17.15 14.71c-.302-.15-1.791-.88-2.072-.982-.281-.103-.485-.15-.69.15-.205.302-.797.982-.976 1.186-.18.205-.359.23-.66.08-1.597-.798-2.613-1.47-3.663-3.274-.27-.464.27-.43.774-1.434.085-.17.043-.321-.02-.472-.064-.15-.485-1.168-.665-1.597-.175-.42-.367-.362-.505-.369-.13-.007-.28-.009-.43-.009-.15 0-.395.056-.6.282-.206.226-.785.767-.785 1.87s.803 2.17.916 2.32c.113.15 1.58 2.413 3.827 3.38.535.23 1.034.39 1.389.5.54.17 1.03.145 1.42.087.43-.064 1.79-.731 2.046-1.402.256-.67.256-1.246.18-1.402-.077-.15-.282-.25-.584-.4z"/>
+                              </svg>
+                              {phone}
+                            </a>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">Sem telefone cadastrado</span>
+                          )}
+                        </div>
+
+                        <div className="text-right space-y-1 sm:self-center">
+                          <p className="font-extrabold text-sm text-[#7C3AED] dark:text-[#a855f7]">
+                            {new Intl.NumberFormat('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            }).format(item.valor_parcela || 0)}
+                          </p>
+                          <p className={`text-[10px] font-semibold ${A.textMuted}`}>
+                            Ref: {item.mesano_text} • Venc: {formatGroupDate(item.data_vencimento)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+              )}
+            </div>
+            <div className="flex justify-end pt-4 mt-4 border-t border-dashed border-slate-200 dark:border-slate-700/50">
+              <button
+                type="button"
+                onClick={() => setShowOpenInstallmentsModal(false)}
+                className="px-5 py-2.5 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR COTA */}
+      {showEditCotaModal && cotaToEdit && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={`${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-dashed pb-3 border-slate-200 dark:border-slate-700/50">
+              <div>
+                <h3 className={`text-lg font-bold ${A.textPrimary}`}>Editar Cota</h3>
+                <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                  Cliente: <strong className="text-brand-purple">{cotaToEdit.clientes?.nome || ''}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditCotaModal(false)}
+                className={`p-1 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`}
+              >
+                <Plus size={16} className="rotate-45" />
+              </button>
+            </div>
+            <form onSubmit={handleEditCotaSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Número da Cota
+                  </label>
+                  <input
+                    type="number"
+                    value={editCotaNo}
+                    disabled
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} opacity-60 cursor-not-allowed outline-none shadow-sm`}
+                    placeholder="Ex: 5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Dia de Vencimento
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={editCotaVencimentoDia}
+                    disabled
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} opacity-60 cursor-not-allowed outline-none shadow-sm`}
+                    placeholder="Ex: 10"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Data de Retirada
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={editCotaDataRetirada}
+                    onChange={(e) => setEditCotaDataRetirada(e.target.value)}
+                    className={`flex-1 px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                  />
+                  {editCotaDataRetirada && (
+                    <button
+                      type="button"
+                      onClick={() => setEditCotaDataRetirada('')}
+                      className={`px-3 rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} text-xs font-bold transition-all cursor-pointer`}
+                      title="Limpar Data"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1 relative">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Mês de Retirada (Opcional)
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditRetiradaMonthPopover(!showEditRetiradaMonthPopover)}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none cursor-pointer text-left month-popover-trigger`}
+                  >
+                    <span className={editCotaMesRetirada ? A.textPrimary : 'text-slate-400'}>
+                      {editCotaMesRetirada || 'Selecionar Mês/Ano'}
+                    </span>
+                    <Calendar size={16} className="text-slate-400" />
+                  </button>
+
+                  {showEditRetiradaMonthPopover && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowEditRetiradaMonthPopover(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`absolute left-0 right-0 mt-1 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-4`}
+                      >
+                        {/* Seleção de Ano */}
+                        <div className="flex items-center justify-between border-b border-dashed pb-2 border-slate-200 dark:border-slate-700/50">
+                          <button
+                            type="button"
+                            onClick={() => setEditRetiradaYear((y) => y - 1)}
+                            className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className={`font-bold text-sm ${A.textPrimary}`}>{editRetiradaYear}</span>
+                          <button
+                            type="button"
+                            onClick={() => setEditRetiradaYear((y) => y + 1)}
+                            className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+
+                        {/* Grade de Meses */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName) => {
+                            const yearShort = String(editRetiradaYear).substring(2);
+                            const currentVal = `${mName}/${yearShort}`;
+                            const isSelected = editCotaMesRetirada === currentVal;
+
+                            return (
+                              <button
+                                key={mName}
+                                type="button"
+                                onClick={() => {
+                                  setEditCotaMesRetirada(currentVal);
+                                  setShowEditRetiradaMonthPopover(false);
+                                }}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-brand-purple text-white shadow-md shadow-brand-purple/20'
+                                    : `border border-transparent ${A.bgHover} ${A.textPrimary}`
+                                }`}
+                              >
+                                {mName}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Opção Limpar */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditCotaMesRetirada('');
+                            setShowEditRetiradaMonthPopover(false);
+                          }}
+                          className={`w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] dark:hover:text-white transition-all cursor-pointer`}
+                        >
+                          Limpar Seleção
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditCotaModal(false)}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingCota}
+                  className="px-4 py-2 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingCota ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL: CONFIRMAR EXCLUSÃO DE COTA */}
+      {showDeleteCotaConfirmModal && cotaToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={`${A.card} w-full max-w-sm p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-center`}
+          >
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={24} />
+            </div>
+            <h3 className={`text-lg font-bold ${A.textPrimary} mb-2`}>Excluir Cota de Consórcio?</h3>
+            <p className={`text-xs ${A.textMuted} mb-6`}>
+              Tem certeza que deseja excluir a cota do cliente{' '}
+              <strong className="text-slate-800 dark:text-slate-200">{cotaToDelete.clientes?.nome || ''}</strong>?
+              Esta ação removerá a associação deste cliente a este grupo e não poderá ser desfeita.
+            </p>
+            <div className="flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteCotaConfirmModal(false)}
+                className={`px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteCota}
+                disabled={isDeletingCota}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-md shadow-rose-600/10 disabled:opacity-50 cursor-pointer"
+              >
+                {isDeletingCota ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* MODAL: INCLUIR CLIENTE NO GRUPO */}
+      {showAddCotaModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className={`${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+          >
+            <div className="flex justify-between items-center mb-4 border-b border-dashed pb-3 border-slate-200 dark:border-slate-700/50">
+              <div>
+                <h3 className={`text-lg font-bold ${A.textPrimary}`}>Incluir Cliente no Grupo</h3>
+                <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                  Grupo: <strong className="text-brand-purple">{selectedGrupoObj?.periodo_text || ''}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddCotaModal(false)}
+                className={`p-1 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`}
+              >
+                <Plus size={16} className="rotate-45" />
+              </button>
+            </div>
+            <form onSubmit={handleAddCotaSubmit} className="space-y-4">
+              <div className="space-y-1 relative">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Cliente
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Pesquise por nome do cliente..."
+                    value={clientSearchQuery}
+                    onChange={(e) => {
+                      setClientSearchQuery(e.target.value);
+                      setShowClientDropdown(true);
+                      if (newCotaClienteId) setNewCotaClienteId('');
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                  />
+                  {newCotaClienteId && (
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-600 flex items-center gap-1">
+                      <CircleCheck size={14} />
+                      Selecionado
+                    </span>
+                  )}
+                </div>
+
+                {/* Dropdown de Clientes */}
+                {showClientDropdown && clientSearchQuery && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowClientDropdown(false)} />
+                    <div className={`absolute left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border ${A.border} ${A.card} shadow-xl z-50 py-1.5 text-left`}>
+                      {filteredSearchClientes.length === 0 ? (
+                        <div className="px-4 py-2 text-xs text-slate-400">
+                          Nenhum cliente encontrado
+                        </div>
+                      ) : (
+                        filteredSearchClientes.map((cli) => (
+                          <div
+                            key={cli.id}
+                            onClick={() => {
+                              setNewCotaClienteId(cli.id);
+                              setClientSearchQuery(cli.name);
+                              setShowClientDropdown(false);
+                            }}
+                            className={`px-4 py-2 text-xs font-semibold cursor-pointer hover:bg-brand-purple hover:text-white transition-colors ${A.textPrimary}`}
+                          >
+                            {cli.name}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Número da Cota
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    disabled
+                    min={1}
+                    value={newCotaNo}
+                    onChange={(e) => setNewCotaNo(e.target.value)}
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm opacity-60 cursor-not-allowed`}
+                    placeholder="Ex: 5"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Dia de Vencimento
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={31}
+                    value={newCotaVencimentoDia}
+                    onChange={(e) => setNewCotaVencimentoDia(e.target.value)}
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                    placeholder="Ex: 10"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Data de Retirada (Opcional)
+                </label>
+                <input
+                  type="date"
+                  value={newCotaDataRetirada}
+                  onChange={(e) => setNewCotaDataRetirada(e.target.value)}
+                  className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                />
+              </div>
+
+              <div className="space-y-1 relative">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Mês de Retirada (Opcional)
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowRetiradaMonthPopover(!showRetiradaMonthPopover)}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none cursor-pointer text-left month-popover-trigger`}
+                  >
+                    <span className={newCotaMesRetirada ? A.textPrimary : 'text-slate-400'}>
+                      {newCotaMesRetirada || 'Selecionar Mês/Ano'}
+                    </span>
+                    <Calendar size={16} className="text-slate-400" />
+                  </button>
+
+                  {showRetiradaMonthPopover && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowRetiradaMonthPopover(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`absolute left-0 right-0 mt-1 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-4`}
+                      >
+                        {/* Seleção de Ano */}
+                        <div className="flex items-center justify-between border-b border-dashed pb-2 border-slate-200 dark:border-slate-700/50">
+                          <button
+                            type="button"
+                            onClick={() => setRetiradaYear((y) => y - 1)}
+                            className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className={`font-bold text-sm ${A.textPrimary}`}>{retiradaYear}</span>
+                          <button
+                            type="button"
+                            onClick={() => setRetiradaYear((y) => y + 1)}
+                            className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+
+                        {/* Grade de Meses */}
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName) => {
+                            const yearShort = String(retiradaYear).substring(2);
+                            const currentVal = `${mName}/${yearShort}`;
+                            const isSelected = newCotaMesRetirada === currentVal;
+
+                            return (
+                              <button
+                                key={mName}
+                                type="button"
+                                onClick={() => {
+                                  setNewCotaMesRetirada(currentVal);
+                                  setShowRetiradaMonthPopover(false);
+                                }}
+                                className={`py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-brand-purple text-white shadow-md shadow-brand-purple/20'
+                                    : `border border-transparent ${A.bgHover} ${A.textPrimary}`
+                                }`}
+                              >
+                                {mName}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Opção Limpar */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewCotaMesRetirada('');
+                            setShowRetiradaMonthPopover(false);
+                          }}
+                          className={`w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] dark:hover:text-white transition-all cursor-pointer`}
+                        >
+                          Limpar Seleção
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCotaModal(false)}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingNewCota}
+                  className="px-4 py-2 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingNewCota ? 'Incluindo...' : 'Incluir'}
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}

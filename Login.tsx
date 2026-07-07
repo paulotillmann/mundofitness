@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Phone, ArrowLeft, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -67,17 +68,61 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setSignUpPhone(formatted);
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simular autenticação
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        showAlert('Erro de Login', error.message, 'error');
+        setIsLoading(false);
+        return;
+      }
+
+      // Buscar se está aprovado
+      const { data: profile, error: profileError } = await supabase
+        .from('usuarios')
+        .select('aprovado')
+        .eq('id', data.user?.id)
+        .single();
+
+      if (profileError || !profile) {
+        await supabase.auth.signOut();
+        showAlert(
+          'Perfil Não Encontrado',
+          'Não encontramos o seu perfil de usuário no sistema. Se acabou de se cadastrar, aguarde a criação do perfil.',
+          'error'
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      if (!profile.aprovado) {
+        await supabase.auth.signOut();
+        showAlert(
+          'Acesso Pendente',
+          'Sua conta foi cadastrada, mas ainda está pendente de aprovação pelo administrador. Entre em contato para liberar o acesso.',
+          'info'
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // Login bem sucedido
       onLoginSuccess();
-    }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      showAlert('Erro de Conexão', 'Ocorreu um erro ao conectar ao servidor.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (signUpPassword !== signUpConfirmPassword) {
       showAlert('Erro de Senha', 'As senhas digitadas não coincidem.', 'error');
@@ -92,12 +137,28 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       return;
     }
     setIsLoading(true);
-    // Simular cadastro
-    setTimeout(() => {
-      setIsLoading(false);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: signUpEmail,
+        password: signUpPassword,
+        options: {
+          data: {
+            nome: signUpName,
+            celular: signUpPhone,
+          },
+        },
+      });
+
+      if (error) {
+        showAlert('Erro no Cadastro', error.message, 'error');
+        setIsLoading(false);
+        return;
+      }
+
       showAlert(
         'Cadastro Realizado!',
-        'Sua conta foi criada com sucesso! Redirecionando para o login.',
+        'Sua conta foi criada com sucesso e está sob análise do administrador. Você receberá permissão em breve.',
         'success',
         () => {
           setView('login');
@@ -110,17 +171,35 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           setAcceptTerms(false);
         }
       );
-    }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      showAlert('Erro no Cadastro', 'Ocorreu um erro ao cadastrar sua conta.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleForgotSubmit = (e: React.FormEvent) => {
+  const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simular envio de recuperação de senha
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+        redirectTo: window.location.origin,
+      });
+
+      if (error) {
+        showAlert('Erro de Recuperação', error.message, 'error');
+        setIsLoading(false);
+        return;
+      }
+
       setView('forgot-success');
-    }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      showAlert('Erro de Conexão', 'Ocorreu um erro ao conectar ao servidor.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

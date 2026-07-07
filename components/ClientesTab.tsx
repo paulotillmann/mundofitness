@@ -367,7 +367,7 @@ const ClientesTab: React.FC<ClientesTabProps> = ({
       <div className="flex justify-between items-center text-left">
         <div className="space-y-1">
           <h1 className={`text-3xl font-bold tracking-tight ${A.textPrimary}`}>
-            Gerenciamento de Clientes
+            Clientes
           </h1>
           <p className={`text-sm ${A.textMuted}`}>
             Consulte, edite ou crie novos clientes da academia.
