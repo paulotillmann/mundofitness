@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mundo Fitness - Gestão de loja</title>
+    <link rel="icon" type="image/png" href="/import/logomundo.png" />
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
@@ -21,7 +22,7 @@
                 lime: '#C0F62C',
                 blue: '#06B6D4',
               },
-              neutralLight: '#F8FAFC',
+              neutralLight: 'var(--neutral-bg, #F2F2F2)',
               textPrimary: '#0F172A',
               textMuted: '#64748B',
               borderGray: '#E2E8F0',
@@ -70,6 +71,7 @@
     </script>
     <style>
       :root {
+        --neutral-bg: #F2F2F2;
         --background: 0 0% 100%;
         --foreground: 222.2 84% 4.9%;
         --card: 0 0% 100%;
@@ -104,7 +106,7 @@
         height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #F8FAFC;
+        background: var(--neutral-bg);
         border-radius: 9999px;
       }
       ::-webkit-scrollbar-thumb {
@@ -116,7 +118,7 @@
       }
       * {
         scrollbar-width: thin;
-        scrollbar-color: #A78BFA #F8FAFC;
+        scrollbar-color: #A78BFA var(--neutral-bg);
       }
       /* Estilos globais de foco para todos os inputs do projeto */
       input:focus:not(:disabled), 
@@ -124,7 +126,7 @@
       textarea:focus:not(:disabled),
       button.month-popover-trigger:focus {
         border-color: #7C3AED !important;
-        background-color: #F8FAFC !important;
+        background-color: var(--neutral-bg) !important;
         color: #0F172A !important; /* Texto legível sobre fundo claro */
         outline: none !important;
         box-shadow: 0 0 0 2px rgba(124, 90, 237, 0.2) !important;

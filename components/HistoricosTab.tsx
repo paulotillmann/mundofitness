@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
+import { DashboardContext } from '../DashboardContext';
 import {
   History,
   Plus,
@@ -27,12 +28,9 @@ interface Historico {
   updated_at?: string;
 }
 
-interface HistoricosTabProps {
-  A: any;
-  globalSearch: string;
-}
-
-const HistoricosTab: React.FC<HistoricosTabProps> = ({ A, globalSearch }) => {
+const HistoricosTab: React.FC = () => {
+  const ctx = useContext(DashboardContext)!;
+  const { A, globalSearch } = ctx;
   const isDarkMode = A.textPrimary === 'text-slate-100';
 
   // Estados de Dados
@@ -507,8 +505,20 @@ const HistoricosTab: React.FC<HistoricosTabProps> = ({ A, globalSearch }) => {
               setCurrentPage(1);
             }}
             placeholder="Buscar por descrição ou ID do Bubble..."
-            className={`w-full pl-10 pr-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:border-transparent transition-all`}
+            className={`w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:border-transparent transition-all`}
           />
+          {localSearch && (
+            <button
+              onClick={() => {
+                setLocalSearch('');
+                setCurrentPage(1);
+              }}
+              className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              title="Limpar pesquisa"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
       </div>
 

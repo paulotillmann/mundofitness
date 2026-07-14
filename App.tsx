@@ -1,34 +1,41 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
-import Login from './Login';
+import LoginPage from './LoginPage';
 import Dashboard from './Dashboard';
+import DashboardTab from './components/DashboardTab';
+import ClientesTab from './components/ClientesTab';
+import GruposTab from './components/GruposTab';
+import ConsorciosTab from './components/ConsorciosTab';
+import ConfiguracoesTab from './components/ConfiguracoesTab';
+import CrediariosTab from './components/CrediariosTab';
+import HistoricosTab from './components/HistoricosTab';
+import NotificacoesTab from './components/NotificacoesTab';
 
-const App: React.FC = () => {
-  const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Obter sessão atual
-    supabase.auth.getSession().then(async ({ data: { session: currentSession } }) => {
+    const checkAuth = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
       if (currentSession) {
-        // Verificar se está aprovado na tabela usuarios
         const { data: profile } = await supabase
           .from('usuarios')
           .select('aprovado')
           .eq('id', currentSession.user.id)
           .single();
-        
         if (profile && profile.aprovado) {
-          setSession(currentSession);
+          setAuthorized(true);
         } else {
           await supabase.auth.signOut();
-          setSession(null);
+          setAuthorized(false);
         }
+      } else {
+        setAuthorized(false);
       }
-      setLoading(false);
-    });
+    };
+    checkAuth();
 
-    // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (newSession) {
         const { data: profile } = await supabase
@@ -36,36 +43,60 @@ const App: React.FC = () => {
           .select('aprovado')
           .eq('id', newSession.user.id)
           .single();
-        
         if (profile && profile.aprovado) {
-          setSession(newSession);
+          setAuthorized(true);
         } else {
-          setSession(null);
+          setAuthorized(false);
         }
       } else {
-        setSession(null);
+        setAuthorized(false);
       }
-      setLoading(false);
     });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  if (authorized === null) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#F8FAFC]">
+      <div className="flex h-screen w-screen items-center justify-center bg-neutralLight">
         <div className="w-12 h-12 border-4 border-brand-purple border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
-  if (!session) {
-    return <Login onLoginSuccess={() => {}} />;
+  if (!authorized) {
+    return <Navigate to="/login" replace />;
   }
 
-  return <Dashboard onLogout={async () => { await supabase.auth.signOut(); }} />;
+  return children;
+};
+
+const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage onLoginSuccess={() => {}} />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard onLogout={async () => { await supabase.auth.signOut(); }} />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<DashboardTab />} />
+          <Route path="clientes" element={<ClientesTab />} />
+          <Route path="grupos" element={<GruposTab />} />
+          <Route path="consorcios" element={<ConsorciosTab />} />
+          <Route path="crediarios" element={<CrediariosTab />} />
+          <Route path="historicos" element={<HistoricosTab />} />
+          <Route path="notificacoes" element={<NotificacoesTab />} />
+          <Route path="configuracoes" element={<ConfiguracoesTab />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 };
 
 export default App;

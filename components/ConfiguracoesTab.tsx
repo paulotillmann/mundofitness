@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../supabaseClient';
+import { DashboardContext } from '../DashboardContext';
 import {
   Database,
   SlidersHorizontal,
@@ -17,26 +18,13 @@ import {
   Check,
   Search,
   UserCheck,
-  UserX
+  UserX,
+  X
 } from 'lucide-react';
 
-interface ConfiguracoesTabProps {
-  A: any;
-  refreshClientes: () => Promise<void>;
-  refreshGrupos: () => Promise<void>;
-  refreshConsorcios: () => Promise<void>;
-  currentUser: any;
-  refreshProfile: () => Promise<void>;
-}
-
-const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
-  A,
-  refreshClientes,
-  refreshGrupos,
-  refreshConsorcios,
-  currentUser,
-  refreshProfile
-}) => {
+const ConfiguracoesTab: React.FC = () => {
+  const ctx = useContext(DashboardContext)!;
+  const { A, refreshClientes, refreshGrupos, refreshConsorcios, currentUser, refreshProfile } = ctx;
   // Sub-abas locais
   const [activeSection, setActiveSection] = useState<'importacao' | 'geral' | 'seguranca'>('importacao');
   const [activeImportType, setActiveImportType] = useState<string>('clientes');
@@ -241,7 +229,7 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
     grupos: 'https://mundofitness.app.br/version-test/api/1.1/obj/Grupos',
     consorcios: 'https://mundofitness.app.br/version-test/api/1.1/obj/Consorcios',
     pagamentos: 'https://mundofitness.app.br/version-test/api/1.1/obj/ConsorciosPagamentos',
-    receitas: ''
+    receitas: 'https://mundofitness.app.br/version-test/api/1.1/obj/Receitas'
   });
 
   const [apiTokens, setApiTokens] = useState<Record<string, string>>({
@@ -249,7 +237,7 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
     grupos: '764f84d372e616198a92baedc311a736',
     consorcios: '764f84d372e616198a92baedc311a736',
     pagamentos: '764f84d372e616198a92baedc311a736',
-    receitas: ''
+    receitas: '764f84d372e616198a92baedc311a736'
   });
 
   const [tokenVisibility, setTokenVisibility] = useState<Record<string, boolean>>({
@@ -485,9 +473,35 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
         ]);
       } else if (type === 'receitas') {
         setImportedReceitas([
-          { id: 'r1', description: 'Mensalidade Mariana (Bubble)', category: 'Mensalidade', value: 'R$ 150,00', date: '24/06/2026', type: 'Entrada' },
-          { id: 'r2', description: 'Venda Whey Protein (Bubble)', category: 'Venda de Produto', value: 'R$ 220,00', date: '23/06/2026', type: 'Entrada' },
-          { id: 'r3', description: 'Venda Creatina Pura (Bubble)', category: 'Venda de Produto', value: 'R$ 110,00', date: '22/06/2026', type: 'Entrada' }
+          {
+            _id: 'r1',
+            'Created Date': '2024-12-05T20:29:56.495Z',
+            clientes_custom_clientes: 'invalid_bubble_id_for_test',
+            datapagamento_date: '2024-12-10T03:00:00.000Z',
+            datavencimento_date: '2024-12-10T03:00:00.000Z',
+            formapagamento_option_formapagamentos: 'PIX',
+            nomecliente_text: 'ANDRESSA TERRIVEL BARCELLOS RICARDO TOMAZ (Mock)',
+            parcelas_text: '1/1',
+            tipopagamento_option_tipopagamentos: 'Crediário',
+            valorpagar_number: 44,
+            valorpago_number: 44,
+            valortaxacartao_number: 0,
+            historico_custom_historicos: '1733430594790x131049516444418050'
+          },
+          {
+            _id: 'r2',
+            'Created Date': '2024-12-18T17:38:31.112Z',
+            clientes_custom_clientes: 'invalid_bubble_id_for_test',
+            datapagamento_date: '2024-12-19T03:00:00.000Z',
+            datavencimento_date: '2024-12-18T03:00:00.000Z',
+            formapagamento_option_formapagamentos: 'Cartão',
+            nomecliente_text: 'ANA PAULA DA ACADEMIA FEMININA (Mock)',
+            tipopagamento_option_tipopagamentos: 'A vista',
+            valorpagar_number: 189,
+            valorpago_number: 176.58,
+            valortaxacartao_number: 12.42,
+            historico_custom_historicos: '1733440154410x864424633276039200'
+          }
         ]);
       }
 
@@ -727,6 +741,274 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
     } catch (err: any) {
       console.error(err);
       setErrorMsg(`Erro ao integrar dados com o Supabase: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Integrar Receitas ao Supabase (Tabela crediarios e historico)
+  const handleSyncReceitas = async () => {
+    if (importedReceitas.length === 0) return;
+    setIsLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      // 1. Buscar todos os históricos do Bubble.io para poder resolver os nomes
+      const token = apiTokens.receitas;
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      let bubbleHistoricos: any[] = [];
+      try {
+        const histUrl = 'https://mundofitness.app.br/version-test/api/1.1/obj/Historicos';
+        let cursor = 0;
+        let hasMore = true;
+        while (hasMore) {
+          const response = await fetch(`${histUrl}?cursor=${cursor}&limit=100`, {
+            method: 'GET',
+            headers
+          });
+          if (!response.ok) break;
+          const resData = await response.json();
+          const results = resData?.response?.results || resData?.results || [];
+          if (results.length === 0) {
+            hasMore = false;
+          } else {
+            bubbleHistoricos = [...bubbleHistoricos, ...results];
+            if (resData?.response?.remaining === 0 || results.length < 100) {
+              hasMore = false;
+            } else {
+              cursor += results.length;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao buscar históricos do Bubble:', e);
+      }
+
+      // 2. Garantir históricos no Supabase e associar bubble_id
+      const { data: dbHistoricos, error: hErr } = await supabase
+        .from('historico')
+        .select('*');
+      if (hErr) throw new Error(`Erro ao buscar históricos do Supabase: ${hErr.message}`);
+
+      // Criar mapa local de históricos existentes
+      const histDescMap = new Map<string, any>();
+      const histBubbleMap = new Map<string, any>();
+      dbHistoricos?.forEach((h) => {
+        histDescMap.set(h.descricao.toLowerCase().trim(), h);
+        if (h.bubble_id) {
+          histBubbleMap.set(h.bubble_id, h);
+        }
+      });
+
+      const newHistoriesToInsert: any[] = [];
+      const updatedHistoriesToUpdate: any[] = [];
+
+      // Mapeamento em memória para bubble_id -> descricao das categorias do Bubble
+      const bubbleHistMap = new Map<string, string>();
+      bubbleHistoricos.forEach((bh) => {
+        if (bh._id && bh.descricao_text) {
+          bubbleHistMap.set(bh._id, bh.descricao_text);
+        }
+      });
+
+      // Identificar quais históricos do Bubble precisam ser criados ou atualizados
+      bubbleHistoricos.forEach((bh) => {
+        const desc = bh.descricao_text?.trim();
+        if (!desc) return;
+        
+        const existingByDesc = histDescMap.get(desc.toLowerCase());
+        const existingByBubble = histBubbleMap.get(bh._id);
+
+        if (!existingByBubble && !existingByDesc) {
+          newHistoriesToInsert.push({
+            bubble_id: bh._id,
+            descricao: desc
+          });
+        } else if (existingByDesc && !existingByDesc.bubble_id) {
+          updatedHistoriesToUpdate.push({
+            id: existingByDesc.id,
+            bubble_id: bh._id,
+            descricao: existingByDesc.descricao
+          });
+        }
+      });
+
+      // Inserir os novos históricos
+      if (newHistoriesToInsert.length > 0) {
+        const uniqueInsertsMap = new Map<string, any>();
+        newHistoriesToInsert.forEach(h => {
+          uniqueInsertsMap.set(h.descricao.toLowerCase(), h);
+        });
+        const uniqueInserts = Array.from(uniqueInsertsMap.values());
+
+        const { error: insErr } = await supabase
+          .from('historico')
+          .insert(uniqueInserts);
+        if (insErr) console.error('Erro ao inserir novos históricos:', insErr);
+      }
+
+      // Atualizar os históricos existentes com bubble_id
+      if (updatedHistoriesToUpdate.length > 0) {
+        const { error: updErr } = await supabase
+          .from('historico')
+          .upsert(updatedHistoriesToUpdate, { onConflict: 'id' });
+        if (updErr) console.error('Erro ao atualizar históricos com bubble_id:', updErr);
+      }
+
+      // Re-buscar históricos atualizados para ter o mapeamento final completo
+      const { data: finalHistoricos, error: fErr } = await supabase
+        .from('historico')
+        .select('*');
+      if (fErr) throw new Error(`Erro ao re-buscar históricos: ${fErr.message}`);
+
+      const finalHistMap = new Map<string, string>();
+      finalHistoricos?.forEach((h) => {
+        if (h.bubble_id) finalHistMap.set(h.bubble_id, h.id);
+        finalHistMap.set(h.descricao.toLowerCase().trim(), h.id);
+      });
+
+      // 3. Buscar clientes e crediarios_clientes para fazer a vinculação relacional
+      const { data: dbClientes, error: cErr } = await supabase
+        .from('clientes')
+        .select('id, bubble_id');
+      if (cErr) throw new Error(`Erro ao buscar clientes: ${cErr.message}`);
+
+      const clientMap = new Map<string, string>();
+      dbClientes?.forEach((c) => {
+        if (c.bubble_id) clientMap.set(c.bubble_id, c.id);
+      });
+
+      const { data: dbCC, error: ccErr } = await supabase
+        .from('crediarios_clientes')
+        .select('id, cliente_id');
+      if (ccErr) throw new Error(`Erro ao buscar crediarios_clientes: ${ccErr.message}`);
+
+      const ccMap = new Map<string, string>();
+      dbCC?.forEach((cc) => {
+        ccMap.set(cc.cliente_id, cc.id);
+      });
+
+      // Normalizar dados para respeitar constraints do banco
+      const normalizeFormaPagamento = (val: string | undefined | null): string | null => {
+        if (!val) return null;
+        const lower = val.toLowerCase().trim();
+        if (lower === 'dinheiro') return 'dinheiro';
+        if (lower === 'pix') return 'PIX';
+        if (lower === 'cartão' || lower === 'cartao') return 'cartão';
+        if (lower === 'cartão bb' || lower === 'cartao bb') return 'cartão BB';
+        if (lower === 'cartão santander' || lower === 'cartao santander') return 'cartão Santander';
+        if (lower === 'cartão nubank' || lower === 'cartao nubank') return 'Cartão Nubank';
+        if (lower === 'cartão sicoob' || lower === 'cartao sicoob') return 'Cartão Sicoob';
+        return null;
+      };
+
+      const normalizeTipoPagamento = (val: string | undefined | null): string => {
+        if (!val) return 'A vista';
+        const lower = val.toLowerCase().trim();
+        if (lower === 'a vista' || lower === 'à vista' || lower === 'a-vista') return 'A vista';
+        if (lower === 'crediário' || lower === 'crediario') return 'Crediário';
+        return 'A vista';
+      };
+
+      let skippedCount = 0;
+      const crediariosUpsertData: any[] = [];
+      const newCCInserts: { cliente_id: string }[] = [];
+
+      for (const item of importedReceitas) {
+        const bubbleClient = item.clientes_custom_clientes;
+        if (!bubbleClient) {
+          skippedCount++;
+          continue;
+        }
+
+        const localClientId = clientMap.get(bubbleClient);
+        if (!localClientId) {
+          skippedCount++;
+          continue;
+        }
+
+        if (!ccMap.has(localClientId)) {
+          newCCInserts.push({ cliente_id: localClientId });
+          ccMap.set(localClientId, 'PENDING');
+        }
+      }
+
+      if (newCCInserts.length > 0) {
+        const { data: newCCs, error: ccInsError } = await supabase
+          .from('crediarios_clientes')
+          .insert(newCCInserts)
+          .select('id, cliente_id');
+        
+        if (ccInsError) throw ccInsError;
+
+        newCCs?.forEach((cc) => {
+          ccMap.set(cc.cliente_id, cc.id);
+        });
+      }
+
+      for (const item of importedReceitas) {
+        const bubbleClient = item.clientes_custom_clientes;
+        if (!bubbleClient) continue;
+
+        const localClientId = clientMap.get(bubbleClient);
+        if (!localClientId) continue;
+
+        const crediarioClienteId = ccMap.get(localClientId);
+        if (!crediarioClienteId || crediarioClienteId === 'PENDING') continue;
+
+        let localHistoricoId = null;
+        const bubbleHistId = item.historico_custom_historicos;
+        if (bubbleHistId) {
+          localHistoricoId = finalHistMap.get(bubbleHistId) || null;
+          if (!localHistoricoId) {
+            const descText = bubbleHistMap.get(bubbleHistId);
+            if (descText) {
+              localHistoricoId = finalHistMap.get(descText.toLowerCase().trim()) || null;
+            }
+          }
+        }
+
+        crediariosUpsertData.push({
+          bubble_id: item._id || item.id,
+          crediario_cliente_id: crediarioClienteId,
+          historico_id: localHistoricoId,
+          data_pagamento: item.datapagamento_date || null,
+          data_vencimento: item.datavencimento_date || null,
+          forma_pagamento: normalizeFormaPagamento(item.formapagamento_option_formapagamentos),
+          parcelas: item.parcelas_text || null,
+          tipo_pagamento: normalizeTipoPagamento(item.tipopagamento_option_tipopagamentos),
+          valor_pagar: item.valorpagar_number !== undefined ? item.valorpagar_number : null,
+          valor_pago: item.valorpago_number !== undefined ? item.valorpago_number : null,
+          valor_taxa_cartao: item.valortaxacartao_number !== undefined ? item.valortaxacartao_number : null,
+          created_at: item['Created Date'] || new Date().toISOString(),
+          updated_at: item['Modified Date'] || new Date().toISOString()
+        });
+      }
+
+      if (crediariosUpsertData.length > 0) {
+        const { error: upsError } = await supabase
+          .from('crediarios')
+          .upsert(crediariosUpsertData, { onConflict: 'bubble_id' });
+
+        if (upsError) throw upsError;
+      }
+
+      let syncMsg = `Sincronização concluída! ${crediariosUpsertData.length} receitas importadas para crediários.`;
+      if (newHistoriesToInsert.length > 0) {
+        syncMsg += ` ${newHistoriesToInsert.length} novos históricos cadastrados.`;
+      }
+      if (skippedCount > 0) {
+        syncMsg += ` (${skippedCount} registros ignorados pois os clientes correspondentes não foram encontrados no Supabase).`;
+      }
+
+      setSuccessMsg(syncMsg);
+      setImportedReceitas([]);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMsg(`Erro ao integrar receitas com o Supabase: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -995,6 +1277,14 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
                   {activeImportType === 'pagamentos' && currentList.length > 0 && (
                     <button
                       onClick={handleSyncPagamentos}
+                      className="flex items-center gap-1.5 bg-[#C0F62C] hover:bg-[#A3D61B] text-slate-900 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                    >
+                      <Plus size={14} /> Integrar ao Dashboard ({currentList.length})
+                    </button>
+                  )}
+                  {activeImportType === 'receitas' && currentList.length > 0 && (
+                    <button
+                      onClick={handleSyncReceitas}
                       className="flex items-center gap-1.5 bg-[#C0F62C] hover:bg-[#A3D61B] text-slate-900 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                     >
                       <Plus size={14} /> Integrar ao Dashboard ({currentList.length})
@@ -1311,8 +1601,18 @@ const ConfiguracoesTab: React.FC<ConfiguracoesTabProps> = ({
                     value={usersSearch}
                     onChange={(e) => setUsersSearch(e.target.value)}
                     placeholder="Buscar usuários..."
-                    className={`w-full pl-9 pr-4 py-2 text-xs rounded-full border outline-none ${A.inputText}`}
+                    className={`w-full pl-9 pr-10 py-2 text-xs rounded-full border outline-none ${A.inputText}`}
                   />
+                  {usersSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setUsersSearch('')}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Limpar pesquisa"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
 

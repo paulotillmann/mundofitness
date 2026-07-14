@@ -14,9 +14,10 @@
     "lucide-react": "^0.554.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-grab": "^0.1.47"
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@supabase/mcp-utils": "^0.5.1",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",

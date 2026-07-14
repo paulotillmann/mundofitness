@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
+import { DashboardContext } from '../DashboardContext';
 import {
   CreditCard,
   Plus,
@@ -23,10 +24,9 @@ import {
   Clock,
   User,
   Phone,
-  Trash2
+  Trash2,
+  Pencil
 } from 'lucide-react';
-
-
 
 interface Crediario {
   id: string;
@@ -53,6 +53,8 @@ interface Crediario {
   valor_pago?: number;
   valor_taxa_cartao?: number;
   created_at?: string;
+  referente_a?: string | null;
+  data_compra?: string | null;
 }
 
 interface Historico {
@@ -79,12 +81,9 @@ const parseCurrencyInputToNumber = (formattedValue: string) => {
   return (Number(clean) || 0) / 100;
 };
 
-interface CrediariosTabProps {
-  A: any;
-  globalSearch: string;
-}
-
-const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
+const CrediariosTab: React.FC = () => {
+  const ctx = useContext(DashboardContext)!;
+  const { A, globalSearch } = ctx;
   const isDarkMode = A.textPrimary === 'text-slate-100';
   const [crediarios, setCrediarios] = useState<Crediario[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -104,6 +103,14 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
   // Filtros da Coluna 2 (Lançamentos)
   const [launchSearch, setLaunchSearch] = useState<string>('');
   const [launchStatusFilter, setLaunchStatusFilter] = useState<'Todos' | 'Pago' | 'Pendente'>('Todos');
+
+  // Paginação dos Lançamentos (Coluna 2)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 6; // 6 lançamentos por página para caber perfeitamente no container h-[650px]
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedClienteId, launchSearch, launchStatusFilter]);
 
   // Carregar dados do Supabase
   const fetchCrediarios = async () => {
@@ -219,6 +226,14 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
   const [baixaSubmitting, setBaixaSubmitting] = useState<boolean>(false);
   const [baixaError, setBaixaError] = useState<string | null>(null);
 
+  // Estados do Modal de Edição de Pagamento Pago
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+  const [selectedLaunchForEdit, setSelectedLaunchForEdit] = useState<Crediario | null>(null);
+  const [editReferenteA, setEditReferenteA] = useState<string>('');
+  const [editDataCompra, setEditDataCompra] = useState<string>('');
+  const [editSubmitting, setEditSubmitting] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
   const handleOpenBaixaModal = (launch: Crediario) => {
     setSelectedLaunchForBaixa(launch);
     const pendingAmount = Number(launch.valor_pagar || 0) - Number(launch.valor_pago || 0);
@@ -291,6 +306,72 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
     }
   };
 
+  const handleOpenEditModal = (launch: Crediario) => {
+    setSelectedLaunchForEdit(launch);
+    setEditReferenteA(launch.referente_a || '');
+    
+    let formattedDate = '';
+    if (launch.data_compra) {
+      try {
+        const d = new Date(launch.data_compra);
+        if (!isNaN(d.getTime())) {
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          formattedDate = `${year}-${month}-${day}`;
+        }
+      } catch {}
+    }
+    setEditDataCompra(formattedDate);
+    setEditError(null);
+    setShowEditModal(true);
+  };
+
+  const handleConfirmEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLaunchForEdit) return;
+
+    setEditSubmitting(true);
+    setEditError(null);
+
+    try {
+      const updatedDataCompra = editDataCompra ? new Date(editDataCompra + 'T12:00:00Z').toISOString() : null;
+      const updatedReferenteA = editReferenteA.trim() || null;
+
+      const { data, error } = await supabase
+        .from('crediarios')
+        .update({
+          data_compra: updatedDataCompra,
+          referente_a: updatedReferenteA,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedLaunchForEdit.id)
+        .select(`
+          *,
+          crediarios_clientes (
+            cliente_id,
+            clientes (nome, celular, outrasinformacoes)
+          ),
+          historico (descricao)
+        `);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const updatedLaunch = data[0];
+        setCrediarios(prev => prev.map(c => c.id === updatedLaunch.id ? updatedLaunch : c));
+      }
+
+      setShowEditModal(false);
+      setSelectedLaunchForEdit(null);
+    } catch (err: any) {
+      console.error('Erro ao editar lançamento:', err);
+      setEditError(err.message || 'Erro ao salvar alterações.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
   // Estados do Modal de Incluir Pagamento / Parcelamento
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [createType, setCreateType] = useState<'A vista' | 'Crediário'>('A vista');
@@ -306,6 +387,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
   const [createIntervalDays, setCreateIntervalDays] = useState<number>(30);
   const [createSubmitting, setCreateSubmitting] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [createReferenteA, setCreateReferenteA] = useState<string>('');
+  const [createDataCompra, setCreateDataCompra] = useState<string>('');
 
   // Novos estados para busca de cliente no modal
   const [showCreateModalSearch, setShowCreateModalSearch] = useState<boolean>(false);
@@ -348,6 +431,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
     setCreateParcelasCount(2);
     setCreateIntervalDays(30);
     setCreateError(null);
+    setCreateReferenteA('');
+    setCreateDataCompra(localISOTime);
 
     // Configurar modo de busca
     setShowCreateModalSearch(true);
@@ -376,6 +461,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
     setCreateParcelasCount(2);
     setCreateIntervalDays(30);
     setCreateError(null);
+    setCreateReferenteA('');
+    setCreateDataCompra(localISOTime);
 
     // Resetar modo de busca
     setShowCreateModalSearch(false);
@@ -468,10 +555,12 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
             tipo_pagamento: 'A vista',
             valor_pagar: valorTotalNum,
             valor_pago: valorTotalNum,
-            data_pagamento: new Date(createDataPagamento + 'T12:00:00Z').toISOString(),
-            data_vencimento: new Date(createDataPagamento + 'T12:00:00Z').toISOString(),
-            forma_pagamento: createFormaPagamento,
-            valor_taxa_cartao: parseCurrencyInputToNumber(createValorTaxaCartao)
+            data_pagamento: new Date(createDataVencimento + 'T12:00:00Z').toISOString(),
+            data_vencimento: new Date(createDataVencimento + 'T12:00:00Z').toISOString(),
+            forma_pagamento: 'PIX',
+            valor_taxa_cartao: 0,
+            referente_a: createReferenteA.trim() || null,
+            data_compra: createDataCompra ? new Date(createDataCompra + 'T12:00:00Z').toISOString() : null
           }])
           .select(`
             *,
@@ -512,6 +601,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
             valor_pagar: finalValue,
             valor_pago: 0,
             data_vencimento: dueDate.toISOString(),
+            referente_a: createReferenteA.trim() || null,
+            data_compra: createDataCompra ? new Date(createDataCompra + 'T12:00:00Z').toISOString() : null
           });
         }
 
@@ -612,7 +703,7 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
       totalPagar += pagar;
       totalPago += pago;
-      totalAberto += Math.max(0, pagar - pago);
+      totalAberto += c.data_pagamento ? 0 : Math.max(0, pagar - pago);
       totalTaxas += taxa;
     });
 
@@ -680,7 +771,7 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
       groups[clienteId].totalPagar += pagar;
       groups[clienteId].totalPago += pago;
-      groups[clienteId].totalAberto += Math.max(0, pagar - pago);
+      groups[clienteId].totalAberto += c.data_pagamento ? 0 : Math.max(0, pagar - pago);
       groups[clienteId].launchesCount += 1;
       groups[clienteId].launches.push(c);
     });
@@ -741,7 +832,7 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
       const pagar = Number(launch.valor_pagar || 0);
       const pago = Number(launch.valor_pago || 0);
-      const isAberto = pagar > pago;
+      const isAberto = !launch.data_pagamento && pagar > pago;
 
       let matchStatus = true;
       if (launchStatusFilter === 'Pago') {
@@ -758,6 +849,33 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
       return dateB - dateA;
     });
   }, [selectedClientData, launchSearch, launchStatusFilter]);
+
+  // Paginação dos Lançamentos
+  const totalLaunchesPages = Math.ceil(filteredLaunches.length / itemsPerPage);
+
+  const paginatedLaunches = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredLaunches.slice(start, start + itemsPerPage);
+  }, [filteredLaunches, currentPage]);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    let start = Math.max(1, currentPage - 2);
+    let end = Math.min(totalLaunchesPages, start + 5 - 1);
+    if (end - start + 1 < 5) {
+      start = Math.max(1, end - 5 + 1);
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
+  useEffect(() => {
+    if (currentPage > totalLaunchesPages && totalLaunchesPages > 0) {
+      setCurrentPage(totalLaunchesPages);
+    }
+  }, [filteredLaunches.length, totalLaunchesPages, currentPage]);
 
 
   return (
@@ -888,68 +1006,62 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 select-none">
         {/* Total Lançamentos */}
         <div
-          className={`border ${A.border} ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left`}
+          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${isDarkMode ? 'bg-purple-950/40 text-brand-purple' : 'bg-purple-50 text-brand-purple'}`}>
+              <div className="p-2 rounded-xl bg-purple-200/60 text-brand-purple">
                 <Receipt size={18} />
               </div>
-              <span className={`text-xs font-bold uppercase tracking-wider ${A.textMuted}`}>
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
                 Lançamentos
               </span>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-              isDarkMode 
-                ? 'bg-purple-950/40 text-purple-300 border-purple-800/40' 
-                : 'bg-purple-50 text-purple-700 border-purple-200'
-            }`}>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-purple-855">
               Qtd: {metrics.count}
             </span>
           </div>
           <div className="mt-4">
-            <h4 className={`text-2xl font-black tracking-tight ${A.textPrimary}`}>
+            <h4 className="text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalPagar)}
             </h4>
-            <p className={`text-[10px] ${A.textMuted} font-medium mt-1`}>
+            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
               Valor total a receber lançado
             </p>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
             <div className="bg-brand-purple h-full rounded-full w-full" />
           </div>
         </div>
 
         {/* Total Recebido */}
         <div
-          className={`border ${A.border} ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left`}
+          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${isDarkMode ? 'bg-emerald-950/40 text-emerald-500' : 'bg-emerald-50 text-emerald-500'}`}>
+              <div className="p-2 rounded-xl bg-purple-200/60 text-emerald-600">
                 <TrendingUp size={18} />
               </div>
-              <span className={`text-xs font-bold uppercase tracking-wider ${A.textMuted}`}>
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
                 Total Recebido
               </span>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-              isDarkMode 
-                ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/40' 
-                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-            }`}>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-emerald-700">
               Pago
             </span>
           </div>
           <div className="mt-4">
-            <h4 className={`text-2xl font-black tracking-tight ${A.textPrimary}`}>
+            <h4 className="text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalPago)}
             </h4>
-            <p className={`text-[10px] ${A.textMuted} font-medium mt-1`}>
+            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
               Total pago no período
             </p>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
             <div 
               className="bg-emerald-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPagar > 0 ? (metrics.totalPago / metrics.totalPagar) * 100 : 0}%` }}
@@ -959,34 +1071,31 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
         {/* Total Em Aberto */}
         <div
-          className={`border ${A.border} ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left`}
+          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${isDarkMode ? 'bg-rose-950/40 text-rose-500' : 'bg-rose-50 text-rose-500'}`}>
+              <div className="p-2 rounded-xl bg-purple-200/60 text-rose-600">
                 <DollarSign size={18} />
               </div>
-              <span className={`text-xs font-bold uppercase tracking-wider ${A.textMuted}`}>
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
                 Total Em Aberto
               </span>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-              isDarkMode 
-                ? 'bg-rose-950/40 text-rose-300 border-rose-800/40' 
-                : 'bg-rose-50 text-rose-700 border-rose-200'
-            }`}>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-rose-700">
               Pendente
             </span>
           </div>
           <div className="mt-4">
-            <h4 className={`text-2xl font-black tracking-tight ${A.textPrimary}`}>
+            <h4 className="text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalAberto)}
             </h4>
-            <p className={`text-[10px] ${A.textMuted} font-medium mt-1`}>
+            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
               Valor pendente de recebimento
             </p>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
             <div 
               className="bg-rose-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPagar > 0 ? (metrics.totalAberto / metrics.totalPagar) * 100 : 0}%` }}
@@ -996,34 +1105,31 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
         {/* Taxas do Cartão */}
         <div
-          className={`border ${A.border} ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left`}
+          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-xl ${isDarkMode ? 'bg-amber-950/40 text-amber-500' : 'bg-amber-50 text-amber-500'}`}>
+              <div className="p-2 rounded-xl bg-purple-200/60 text-amber-600">
                 <Percent size={18} />
               </div>
-              <span className={`text-xs font-bold uppercase tracking-wider ${A.textMuted}`}>
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
                 Taxas de Cartão
               </span>
             </div>
-            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-              isDarkMode 
-                ? 'bg-amber-950/40 text-amber-300 border-amber-800/40' 
-                : 'bg-amber-50 text-amber-700 border-amber-200'
-            }`}>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-amber-700">
               Despesa
             </span>
           </div>
           <div className="mt-4">
-            <h4 className={`text-2xl font-black tracking-tight ${A.textPrimary}`}>
+            <h4 className="text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalTaxas)}
             </h4>
-            <p className={`text-[10px] ${A.textMuted} font-medium mt-1`}>
+            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
               Custo total de taxas de cartão
             </p>
           </div>
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
             <div 
               className="bg-amber-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPago > 0 ? (metrics.totalTaxas / metrics.totalPago) * 100 : 0}%` }}
@@ -1034,8 +1140,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
       {/* Seção Principal de Duas Colunas */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
-        {/* COLUNA 1: Lista de Clientes (lg:col-span-5) */}
-        <div className={`lg:col-span-5 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        {/* COLUNA 1: Lista de Clientes (lg:col-span-3) */}
+        <div className={`lg:col-span-3 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {/* Header e Filtros da Coluna 1 */}
           <div className="p-4 border-b border-dashed border-slate-200 dark:border-slate-700 space-y-3 bg-slate-50/20 dark:bg-slate-900/10">
             <div className="flex items-center justify-between">
@@ -1062,8 +1168,18 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                 value={clientSearch}
                 onChange={(e) => setClientSearch(e.target.value)}
                 placeholder="Buscar cliente por nome ou celular..."
-                className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
+                className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
               />
+              {clientSearch && (
+                <button
+                  type="button"
+                  onClick={() => setClientSearch('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Limpar"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
             
             {/* Filtros Rápido de Status (Pill) */}
@@ -1155,8 +1271,8 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
           </div>
         </div>
 
-        {/* COLUNA 2: Lançamentos Detalhados (lg:col-span-7) */}
-        <div className={`lg:col-span-7 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        {/* COLUNA 2: Lançamentos Detalhados (lg:col-span-9) */}
+        <div className={`lg:col-span-9 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {selectedClientData ? (
             <>
               {/* Header do Cliente Selecionado */}
@@ -1194,28 +1310,31 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                 </div>
 
                 {/* Métricas Consolidadas do Cliente (Formato de Card) */}
-                <div className="grid grid-cols-4 gap-2 sm:gap-4 mt-3 p-4 rounded-2xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 shadow-sm text-xs">
+                <div 
+                  className="grid grid-cols-4 gap-2 sm:gap-4 mt-3 p-4 rounded-2xl border border-purple-200 shadow-sm text-xs text-purple-950"
+                  style={{ backgroundColor: '#EFE0F8' }}
+                >
                   <div>
-                    <span className="block text-slate-400 dark:text-slate-500 text-[10px] font-semibold mb-1">Total Lançado</span>
-                    <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                    <span className="block text-purple-900/70 text-[10px] font-semibold mb-1">Total Lançado</span>
+                    <span className="text-base sm:text-lg font-bold text-purple-950">
                       {formatCurrency(selectedClientData.totalPagar)}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-slate-400 dark:text-slate-500 text-[10px] font-semibold mb-1">Total Pago</span>
-                    <span className="text-base sm:text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                    <span className="block text-purple-900/70 text-[10px] font-semibold mb-1">Total Pago</span>
+                    <span className="text-base sm:text-lg font-bold text-emerald-700">
                       {formatCurrency(selectedClientData.totalPago)}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-slate-400 dark:text-slate-500 text-[10px] font-semibold mb-1">Total Aberto</span>
-                    <span className="text-base sm:text-lg font-bold text-rose-500 dark:text-rose-400">
+                    <span className="block text-purple-900/70 text-[10px] font-semibold mb-1">Total Aberto</span>
+                    <span className="text-base sm:text-lg font-bold text-rose-700">
                       {formatCurrency(selectedClientData.totalAberto)}
                     </span>
                   </div>
                   <div>
-                    <span className="block text-slate-400 dark:text-slate-500 text-[10px] font-semibold mb-1">Lançamentos</span>
-                    <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                    <span className="block text-purple-900/70 text-[10px] font-semibold mb-1">Lançamentos</span>
+                    <span className="text-base sm:text-lg font-bold text-purple-950">
                       {selectedClientData.launchesCount}
                     </span>
                   </div>
@@ -1230,8 +1349,18 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                     value={launchSearch}
                     onChange={(e) => setLaunchSearch(e.target.value)}
                     placeholder="Filtrar lançamentos por histórico, valor ou forma..."
-                    className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
+                    className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
                   />
+                  {launchSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLaunchSearch('')}
+                      className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Limpar"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   {(['Todos', 'Pendente', 'Pago'] as const).map((status) => {
@@ -1254,12 +1383,14 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
               </div>
               {/* Header do Grid (Alinhado com os cards de lançamentos) */}
               <div className="px-4 py-2.5 grid grid-cols-12 gap-2 text-slate-450 dark:text-slate-500 uppercase tracking-wider font-bold text-xs text-left select-none">
-                <div className="col-span-1">REF</div>
-                <div className="col-span-2">HISTÓRICO</div>
-                <div className="col-span-2">VENCIMENTO</div>
-                <div className="col-span-2">A PAGAR</div>
-                <div className="col-span-2">PAGO</div>
-                <div className="col-span-2">PAGO EM</div>
+                <div className="col-span-1">COMPRA</div>
+                <div className="col-span-3">REFERENTE</div>
+                <div className="col-span-1">HISTÓRICO</div>
+                <div className="col-span-1">VENC.</div>
+                <div className="col-span-1">TIPO/PARC.</div>
+                <div className="col-span-1">A PAGAR</div>
+                <div className="col-span-2">PAGO/FORMA</div>
+                <div className="col-span-1">PAGO EM</div>
                 <div className="col-span-1 text-center">AÇÕES</div>
               </div>
 
@@ -1274,10 +1405,10 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                     <span className={`text-[10px] ${A.textMuted} mt-0.5`}>Ajuste a busca ou mude o filtro da coluna.</span>
                   </div>
                 ) : (
-                  filteredLaunches.map((launch, idx) => {
+                  paginatedLaunches.map((launch, idx) => {
                     const pagar = Number(launch.valor_pagar || 0);
                     const pago = Number(launch.valor_pago || 0);
-                    const isPago = pagar <= pago && pago > 0;
+                    const isPago = !!launch.data_pagamento || (pagar <= pago && pago > 0);
                     const isEven = idx % 2 === 0;
                     
                     // REF Format: e.g. "Jul/26"
@@ -1302,20 +1433,42 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                             : 'bg-[#7c3aed00]'
                         }`}
                       >
-                        <div className={`col-span-1 font-bold ${A.textPrimary}`}>{refText}</div>
-                        <div className="col-span-2 text-slate-700 dark:text-slate-200 font-semibold truncate" title={launch.historico?.descricao || '-'}>
+                        <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium">
+                          {formatDate(launch.data_compra)}
+                        </div>
+                        <div className="col-span-3 text-slate-700 dark:text-slate-200 font-semibold truncate" title={launch.referente_a || '-'}>
+                          {launch.referente_a || '-'}
+                        </div>
+                        <div className="col-span-1 text-slate-700 dark:text-slate-200 font-semibold truncate" title={launch.historico?.descricao || '-'}>
                           {launch.historico?.descricao || '-'}
                         </div>
-                        <div className="col-span-2 text-slate-600 dark:text-slate-300 font-medium">
+                        <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium">
                           {formatDate(launch.data_vencimento)}
                         </div>
-                        <div className="col-span-2 font-bold text-brand-purple dark:text-purple-400">
+                        <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium truncate">
+                          {launch.tipo_pagamento === 'Crediário' 
+                            ? `Cred.${launch.parcelas ? ` (${launch.parcelas})` : ''}` 
+                            : 'À Vista'}
+                        </div>
+                        <div className="col-span-1 font-bold text-brand-purple dark:text-purple-400">
                           {formatCurrency(launch.valor_pagar)}
                         </div>
-                        <div className={`col-span-2 font-bold ${isPago ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
-                          {isPago ? formatCurrency(launch.valor_pago) : '-'}
+                        <div className="col-span-2 text-left">
+                          {isPago ? (
+                            <>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
+                                {formatCurrency(launch.valor_pago)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium block leading-tight">
+                                {launch.forma_pagamento || 'PIX'}
+                                {Number(launch.valor_taxa_cartao || 0) > 0 && ` (Taxa: ${formatCurrency(launch.valor_taxa_cartao)})`}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500">-</span>
+                          )}
                         </div>
-                        <div className="col-span-2 text-slate-600 dark:text-slate-300 font-medium">
+                        <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium">
                           {isPago ? formatDate(launch.data_pagamento) : '-'}
                         </div>
                         <div className="col-span-1 flex items-center justify-center gap-1">
@@ -1326,6 +1479,15 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                               title="Dar Baixa no Pagamento"
                             >
                               <CheckCircle2 size={16} />
+                            </button>
+                          )}
+                          {isPago && (
+                            <button
+                              onClick={() => handleOpenEditModal(launch)}
+                              className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors active:scale-95 cursor-pointer"
+                              title="Editar Dados do Lançamento Pago"
+                            >
+                              <Pencil size={16} />
                             </button>
                           )}
                           <button
@@ -1341,6 +1503,56 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                   })
                 )}
               </div>
+
+              {/* Paginação footer para Lançamentos */}
+              {totalLaunchesPages > 1 && (
+                <div className={`flex flex-col sm:flex-row items-center justify-between gap-4 p-4 border-t ${A.border} ${A.bgLight}`}>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                    Exibindo <span className="font-bold text-slate-900 dark:text-slate-100">{Math.min((currentPage - 1) * itemsPerPage + 1, filteredLaunches.length)}</span> a{' '}
+                    <span className="font-bold text-slate-900 dark:text-slate-100">{Math.min(currentPage * itemsPerPage, filteredLaunches.length)}</span> de{' '}
+                    <span className="font-bold text-slate-900 dark:text-slate-100">{filteredLaunches.length}</span> lançamentos
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={currentPage === 1}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                        currentPage === 1
+                          ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-brand-purple hover:border-brand-purple active:scale-95'
+                      }`}
+                      title="Página Anterior"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    {getPageNumbers().map((pageNum) => (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          currentPage === pageNum
+                            ? 'bg-brand-purple border-brand-purple text-white shadow-md shadow-brand-purple/20'
+                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-brand-purple hover:border-brand-purple active:scale-95'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalLaunchesPages))}
+                      disabled={currentPage === totalLaunchesPages}
+                      className={`p-2 rounded-xl border transition-all cursor-pointer ${
+                        currentPage === totalLaunchesPages
+                          ? 'opacity-40 cursor-not-allowed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400'
+                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-brand-purple hover:border-brand-purple active:scale-95'
+                      }`}
+                      title="Próxima Página"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             /* Blank State */
@@ -1520,6 +1732,107 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
         )}
       </AnimatePresence>
 
+      {/* MODAL DE EDIÇÃO DE PAGAMENTO BAIXADO */}
+      <AnimatePresence>
+        {showEditModal && selectedLaunchForEdit && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`w-full max-w-md rounded-[24px] border ${A.border} ${A.card} p-6 shadow-2xl space-y-4 text-left`}
+            >
+              <div className="flex items-center justify-between gap-4 pb-2 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3 text-brand-purple">
+                  <Pencil size={24} />
+                  <h3 className={`font-bold text-lg ${A.textPrimary}`}>
+                    Editar Lançamento Pago
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedLaunchForEdit(null);
+                  }}
+                  className={`p-1.5 rounded-lg ${A.bgHover} ${A.textMuted} hover:text-rose-500 transition-colors`}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {editError && (
+                <div className="flex items-start gap-3 p-3 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-800/40 text-rose-800 dark:text-rose-300 text-xs font-semibold shadow-sm">
+                  <AlertCircle size={16} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                  <span>{editError}</span>
+                </div>
+              )}
+
+              <div className="text-xs space-y-1.5">
+                <p className={`${A.textMuted}`}>
+                  Cliente: <strong className={`${A.textPrimary}`}>{selectedClientData?.nome}</strong>
+                </p>
+                <p className={`${A.textMuted}`}>
+                  Histórico: <strong className={`${A.textPrimary}`}>{selectedLaunchForEdit.historico?.descricao || '-'}</strong>
+                </p>
+                <p className={`${A.textMuted}`}>
+                  Valor Lançado: <strong className={`${A.textPrimary}`}>{formatCurrency(selectedLaunchForEdit.valor_pagar)}</strong>
+                </p>
+                <p className={`${A.textMuted}`}>
+                  Valor Pago: <strong className="text-emerald-600 dark:text-emerald-400">{formatCurrency(selectedLaunchForEdit.valor_pago || 0)}</strong>
+                </p>
+              </div>
+
+              <form onSubmit={handleConfirmEdit} className="space-y-4 pt-2">
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Data da Compra
+                  </label>
+                  <input
+                    type="date"
+                    value={editDataCompra}
+                    onChange={(e) => setEditDataCompra(e.target.value)}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Referente a
+                  </label>
+                  <input
+                    type="text"
+                    value={editReferenteA}
+                    onChange={(e) => setEditReferenteA(e.target.value)}
+                    placeholder="Ex: mensalidade, suplementos"
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setSelectedLaunchForEdit(null);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold ${A.bgHover} transition-all`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editSubmitting}
+                    className="bg-brand-purple hover:bg-brand-purpleDark text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {editSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL DE INCLUIR NOVO LANÇAMENTO */}
       <AnimatePresence>
         {showCreateModal && (
@@ -1567,8 +1880,18 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                           value={newLaunchClientSearch}
                           onChange={(e) => setNewLaunchClientSearch(e.target.value)}
                           placeholder="Digite o nome ou celular do cliente..."
-                          className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
+                          className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none transition-all`}
                         />
+                        {newLaunchClientSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setNewLaunchClientSearch('')}
+                            className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                            title="Limpar"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
                       </div>
                       
                       {loadingDbClientes ? (
@@ -1661,6 +1984,7 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                   </div>
 
                   <form onSubmit={handleConfirmCreate} className="space-y-4">
+                    {/* 2. Histórico / Descrição */}
                     <div className="space-y-1">
                       <div className="flex justify-between items-center">
                         <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
@@ -1702,93 +2026,64 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
                       )}
                     </div>
 
+                    {/* 3. Referente a */}
                     <div className="space-y-1">
                       <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
-                        Valor Total *
+                        Referente a
                       </label>
                       <input
                         type="text"
-                        required
-                        value={createValorTotal}
-                        onChange={(e) => setCreateValorTotal(formatCurrencyInput(e.target.value))}
-                        placeholder="R$ 0,00"
+                        value={createReferenteA}
+                        onChange={(e) => setCreateReferenteA(e.target.value)}
+                        placeholder="Ex: mensalidade, suplementos"
                         className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
                       />
                     </div>
 
+                    {/* 4. Data da Compra e Valor Total */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                          Data da Compra *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={createDataCompra}
+                          onChange={(e) => setCreateDataCompra(e.target.value)}
+                          className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                          Valor Total *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={createValorTotal}
+                          onChange={(e) => setCreateValorTotal(formatCurrencyInput(e.target.value))}
+                          placeholder="R$ 0,00"
+                          className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 5. Vencimento / Parcelas */}
                     {createType === 'A vista' ? (
-                      <>
-                        <div className="space-y-1">
-                          <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
-                            Data de Recebimento *
-                          </label>
-                          <input
-                            type="date"
-                            required
-                            value={createDataPagamento}
-                            onChange={(e) => setCreateDataPagamento(e.target.value)}
-                            className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
-                            Forma de Pagamento *
-                          </label>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            {['dinheiro', 'PIX', 'cartão'].map((forma) => {
-                              const isSelected = createFormaPagamento === forma;
-                              return (
-                                <button
-                                  key={forma}
-                                  type="button"
-                                  onClick={() => setCreateFormaPagamento(forma)}
-                                  className={`py-2 rounded-xl text-xs font-bold transition-all border ${
-                                    isSelected
-                                      ? 'bg-brand-purple border-brand-purple text-white shadow-sm'
-                                      : `border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800`
-                                  }`}
-                                >
-                                  {forma.toUpperCase()}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-                            {['cartão BB', 'cartão Santander', 'Cartão Nubank', 'Cartão Sicoob'].map((forma) => {
-                              const isSelected = createFormaPagamento === forma;
-                              return (
-                                <button
-                                  key={forma}
-                                  type="button"
-                                  onClick={() => setCreateFormaPagamento(forma)}
-                                  className={`py-1.5 rounded-xl text-[10px] font-bold transition-all border ${
-                                    isSelected
-                                      ? 'bg-brand-purple border-brand-purple text-white shadow-sm'
-                                      : `border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800`
-                                  }`}
-                                >
-                                  {forma}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
-                            Taxa do Cartão (Opcional)
-                          </label>
-                          <input
-                            type="text"
-                            value={createValorTaxaCartao}
-                            onChange={(e) => setCreateValorTaxaCartao(formatCurrencyInput(e.target.value))}
-                            placeholder="R$ 0,00"
-                            disabled={!createFormaPagamento.toLowerCase().includes('cartão')}
-                            className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText} disabled:opacity-50`}
-                          />
-                        </div>
-                      </>
+                      <div className="space-y-1">
+                        <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                          Data de Vencimento *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={createDataVencimento}
+                          onChange={(e) => setCreateDataVencimento(e.target.value)}
+                          className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                        />
+                      </div>
                     ) : (
                       <>
                         <div className="grid grid-cols-2 gap-4">
@@ -1811,7 +2106,7 @@ const CrediariosTab: React.FC<CrediariosTabProps> = ({ A, globalSearch }) => {
 
                           <div className="space-y-1">
                             <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
-                              1º Vencimento *
+                              Data de Vencimento *
                             </label>
                             <input
                               type="date"

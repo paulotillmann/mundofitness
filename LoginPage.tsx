@@ -1,15 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff, User, Phone, ArrowLeft, CheckCircle2, XCircle, AlertCircle, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 
-interface LoginProps {
+interface LoginPageProps {
   onLoginSuccess: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
+  const navigate = useNavigate();
   const [view, setView] = useState<'login' | 'signup' | 'forgot' | 'forgot-success'>('login');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Efeito para redirecionar se o usuário já estiver logado e aprovado
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: profile } = await supabase
+          .from('usuarios')
+          .select('aprovado')
+          .eq('id', session.user.id)
+          .single();
+        if (profile && profile.aprovado) {
+          navigate('/');
+        }
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
   // Estado do Modal de Aviso Customizado
   const [modal, setModal] = useState<{
@@ -114,6 +134,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
       // Login bem sucedido
       onLoginSuccess();
+      navigate('/');
     } catch (err: any) {
       console.error(err);
       showAlert('Erro de Conexão', 'Ocorreu um erro ao conectar ao servidor.', 'error');
@@ -203,7 +224,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 h-screen overflow-hidden bg-[#F8FAFC] font-sans antialiased text-[#0F172A]">
+    <div className="grid grid-cols-1 md:grid-cols-12 h-screen overflow-hidden bg-neutralLight font-sans antialiased text-[#0F172A]">
       {/* LADO ESQUERDO: Formulários de Fluxo (Login, Cadastro, Recuperação) */}
       <div className="col-span-12 md:col-span-5 flex flex-col justify-between p-6 md:p-8 lg:p-10 bg-white shadow-xl z-10 h-full overflow-y-auto">
         <div className="w-full max-w-md mx-auto my-auto py-2">
@@ -719,5 +740,4 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   );
 };
 
-export default Login;
-
+export default LoginPage;

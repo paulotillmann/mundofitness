@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
+import { DashboardContext } from '../DashboardContext';
 import {
   FolderHeart,
   Briefcase,
@@ -63,21 +64,9 @@ interface Parcela {
   updated_at?: string;
 }
 
-interface ConsorciosTabProps {
-  A: any;
-  gruposList: Grupo[];
-  consorciosList: Consorcio[];
-  clientesList: any[];
-  refreshConsorcios: () => Promise<void>;
-}
-
-const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
-  A,
-  gruposList,
-  consorciosList,
-  clientesList,
-  refreshConsorcios
-}) => {
+const ConsorciosTab: React.FC = () => {
+  const ctx = useContext(DashboardContext)!;
+  const { A, gruposList, consorciosList, clientesList, refreshConsorcios } = ctx;
   const isDark = A.bgLight === 'bg-slate-900';
   // Estado de Seleção
   const [selectedGrupoId, setSelectedGrupoId] = useState<string | null>(null);
@@ -862,6 +851,124 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
         </div>
       </div>
 
+      {/* Cards de Estatísticas Gerais */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 select-none">
+        {/* Card 1: Total Aberto (Ativos) */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.01 }}
+          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
+        >
+          <div className="flex justify-between items-start z-10 gap-1">
+            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+              Total Aberto (Ativos)
+            </span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
+              <Calendar size={16} />
+            </div>
+          </div>
+          <div className="my-2 z-10">
+            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalAPagar)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-orange-600 z-10 truncate">
+            <Calendar size={14} className="flex-shrink-0" />
+            <span className="truncate">
+              {activeGroupsTotals.totalAPagarCount} aberta{activeGroupsTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
+            </span>
+          </div>
+          <Calendar size={72} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
+        </motion.div>
+
+        {/* Card 2: Total Pago (Ativos) */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.01 }}
+          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
+        >
+          <div className="flex justify-between items-start z-10 gap-1">
+            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+              Total Pago (Ativos)
+            </span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
+              <CircleCheck size={16} />
+            </div>
+          </div>
+          <div className="my-2 z-10">
+            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalPago)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 z-10 truncate">
+            <CircleCheck size={14} className="flex-shrink-0" />
+            <span className="truncate">
+              {activeGroupsTotals.totalPagoCount} paga{activeGroupsTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
+            </span>
+          </div>
+          <CircleCheck size={72} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
+        </motion.div>
+
+        {/* Card 3: Em Aberto (Grupo) */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.01 }}
+          onClick={() => selectedGrupoId && setShowOpenInstallmentsModal(true)}
+          className={`relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950 ${
+            selectedGrupoId ? 'cursor-pointer' : ''
+          }`}
+          style={{ backgroundColor: '#EFE0F8' }}
+        >
+          <div className="flex justify-between items-start z-10 gap-1">
+            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+              Em Aberto (Grupo)
+            </span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
+              <Calendar size={16} />
+            </div>
+          </div>
+          <div className="my-2 z-10">
+            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalAPagar)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-orange-600 z-10 truncate">
+            <Calendar size={14} className="flex-shrink-0" />
+            <span className="truncate">
+              {grupoTotals.totalAPagarCount} aberta{grupoTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
+            </span>
+          </div>
+          <Calendar size={72} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
+        </motion.div>
+
+        {/* Card 4: Pagos (Grupo) */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.01 }}
+          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
+        >
+          <div className="flex justify-between items-start z-10 gap-1">
+            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+              Pagos (Grupo)
+            </span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
+              <CircleCheck size={16} />
+            </div>
+          </div>
+          <div className="my-2 z-10">
+            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalPago)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 z-10 truncate">
+            <CircleCheck size={14} className="flex-shrink-0" />
+            <span className="truncate">
+              {grupoTotals.totalPagoCount} paga{grupoTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
+            </span>
+          </div>
+          <CircleCheck size={72} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
+        </motion.div>
+      </div>
+
       {/* Grid Principal de 3 Colunas */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* COLUNA 1: Grupos (tamanho 3) */}
@@ -893,62 +1000,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             </div>
           </div>
 
-          {/* Cards de Totais dos Grupos Ativos */}
-          <div className="grid grid-cols-2 gap-2 text-left">
-            {/* Card 1: Em Aberto */}
-            <motion.div
-              whileHover={{ y: -3, scale: 1.01 }}
-              className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
-            >
-              <div className="flex justify-between items-start z-10 gap-1">
-                <span className="text-[10px] xl:text-[11px] tracking-wider font-bold text-[#64748B] uppercase truncate">
-                  Total Aberto (Ativos)
-                </span>
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
-                  <Calendar size={12} />
-                </div>
-              </div>
-              <div className="my-1.5 z-10">
-                <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalAPagar)}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
-                <Calendar size={12} />
-                <span className="truncate">
-                  {activeGroupsTotals.totalAPagarCount} aberta{activeGroupsTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
-                </span>
-              </div>
-              <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
-            </motion.div>
 
-            {/* Card 2: Pagos */}
-            <motion.div
-              whileHover={{ y: -3, scale: 1.01 }}
-              className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
-            >
-              <div className="flex justify-between items-start z-10 gap-1">
-                <span className="text-[10px] xl:text-[11px] tracking-wider font-bold text-[#64748B] uppercase truncate">
-                  Total Pago (Ativos)
-                </span>
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
-                  <CircleCheck size={12} />
-                </div>
-              </div>
-              <div className="my-1.5 z-10">
-                <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalPago)}
-                </span>
-              </div>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
-                <CircleCheck size={12} />
-                <span className="truncate">
-                  {activeGroupsTotals.totalPagoCount} paga{activeGroupsTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
-                </span>
-              </div>
-              <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
-            </motion.div>
-          </div>
 
           <div className={`border ${A.card} rounded-[24px] p-4 space-y-3 shadow-sm`}>
             {/* Input de Busca de Grupo */}
@@ -963,8 +1015,18 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                 placeholder="Buscar grupo..."
                 value={searchGrupo}
                 onChange={(e) => setSearchGrupo(e.target.value)}
-                className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
+                className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
               />
+              {searchGrupo && (
+                <button
+                  type="button"
+                  onClick={() => setSearchGrupo('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Limpar"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
 
             {/* Listagem de Grupos */}
@@ -1062,65 +1124,7 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
             </div>
           </div>
 
-          {/* Cards de Totais do Grupo Selecionado */}
-          {selectedGrupoId && (
-            <div className="grid grid-cols-2 gap-2 text-left">
-              {/* Card 1: Em Aberto */}
-              <motion.div
-                whileHover={{ y: -3, scale: 1.01 }}
-                onClick={() => setShowOpenInstallmentsModal(true)}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 cursor-pointer ${A.card}`}
-              >
-                <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
-                    Em Aberto (Grupo)
-                  </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
-                    <Calendar size={12} />
-                  </div>
-                </div>
-                <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalAPagar)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
-                  <Calendar size={12} />
-                  <span className="truncate">
-                    {grupoTotals.totalAPagarCount} aberta{grupoTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
-                  </span>
-                </div>
-                <Calendar size={64} className="absolute -right-2 -bottom-2 text-orange-500/5 pointer-events-none z-0" />
-              </motion.div>
 
-              {/* Card 2: Pagos */}
-              <motion.div
-                whileHover={{ y: -3, scale: 1.01 }}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
-              >
-                <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
-                    Pagos (Grupo)
-                  </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
-                    <CircleCheck size={12} />
-                  </div>
-                </div>
-                <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
-                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalPago)}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
-                  <CircleCheck size={12} />
-                  <span className="truncate">
-                    {grupoTotals.totalPagoCount} paga{grupoTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
-                  </span>
-                </div>
-                <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
-              </motion.div>
-            </div>
-          )}
 
           <div className={`border ${A.card} rounded-[24px] p-4 space-y-3 shadow-sm`}>
             {/* Input de Busca de Cota */}
@@ -1135,8 +1139,18 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                 placeholder="Buscar cota ou nome..."
                 value={searchCota}
                 onChange={(e) => setSearchCota(e.target.value)}
-                className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
+                className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
               />
+              {searchCota && (
+                <button
+                  type="button"
+                  onClick={() => setSearchCota('')}
+                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                  title="Limpar"
+                >
+                  <X size={12} />
+                </button>
+              )}
             </div>
 
             {/* Tabela de Cotas */}
@@ -1324,18 +1338,19 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
               {/* Card 1: A Pagar */}
               <motion.div
                 whileHover={{ y: -3, scale: 1.01 }}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+                className="relative overflow-hidden p-3 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-purple-950"
+                style={{ backgroundColor: '#EFE0F8' }}
               >
                 <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
                     A Pagar
                   </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-orange-950/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
                     <Calendar size={12} />
                   </div>
                 </div>
                 <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                  <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-purple-955 block truncate">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalAPagar)}
                   </span>
                 </div>
@@ -1351,18 +1366,19 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
               {/* Card 2: Pagos */}
               <motion.div
                 whileHover={{ y: -3, scale: 1.01 }}
-                className={`relative overflow-hidden p-3 border rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 ${A.card}`}
+                className="relative overflow-hidden p-3 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-purple-950"
+                style={{ backgroundColor: '#EFE0F8' }}
               >
                 <div className="flex justify-between items-start z-10 gap-1">
-                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-[#64748B] uppercase truncate">
+                  <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
                     Pagos
                   </span>
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-emerald-950/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
                     <CircleCheck size={12} />
                   </div>
                 </div>
                 <div className="my-1.5 z-10">
-                  <span className={`text-base sm:text-lg xl:text-xl font-bold tracking-tight ${A.textPrimary} block truncate`}>
+                  <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-purple-955 block truncate">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalPago)}
                   </span>
                 </div>
@@ -2091,13 +2107,26 @@ const ConsorciosTab: React.FC<ConsorciosTabProps> = ({
                       if (newCotaClienteId) setNewCotaClienteId('');
                     }}
                     onFocus={() => setShowClientDropdown(true)}
-                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                    className={`w-full pl-4 pr-28 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
                   />
                   {newCotaClienteId && (
-                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-600 flex items-center gap-1">
+                    <span className="absolute right-10 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-600 flex items-center gap-1">
                       <CircleCheck size={14} />
                       Selecionado
                     </span>
+                  )}
+                  {clientSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setClientSearchQuery('');
+                        if (newCotaClienteId) setNewCotaClienteId('');
+                      }}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                      title="Limpar"
+                    >
+                      <X size={14} />
+                    </button>
                   )}
                 </div>
 

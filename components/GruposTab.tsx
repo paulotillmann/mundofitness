@@ -1,12 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../supabaseClient';
+import { DashboardContext } from '../DashboardContext';
 import {
   FolderHeart,
   Plus,
   Search,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  X
 } from 'lucide-react';
 
 interface Grupo {
@@ -20,17 +22,9 @@ interface Grupo {
   encerrado_boolean: boolean;
 }
 
-interface GruposTabProps {
-  A: any;
-  gruposList: Grupo[];
-  refreshGrupos: () => Promise<void>;
-}
-
-const GruposTab: React.FC<GruposTabProps> = ({
-  A,
-  gruposList,
-  refreshGrupos
-}) => {
+const GruposTab: React.FC = () => {
+  const ctx = useContext(DashboardContext)!;
+  const { A, gruposList, refreshGrupos } = ctx;
   // Estados do Formulário
   const [showForm, setShowForm] = useState(false);
   const [selectedGrupoId, setSelectedGrupoId] = useState<string | null>(null);
@@ -395,10 +389,10 @@ const GruposTab: React.FC<GruposTabProps> = ({
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm('')}
-                className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-brand-purple transition-colors cursor-pointer"
+                className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
                 title="Limpar busca"
               >
-                <Plus size={18} className="rotate-45" />
+                <X size={16} />
               </button>
             )}
           </div>
