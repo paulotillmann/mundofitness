@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -27,6 +27,7 @@ import {
   EyeOff,
   Check,
   RefreshCw,
+  Gift,
   X
 } from 'lucide-react';
 
@@ -58,6 +59,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   // Modal de Edição de Perfil
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showBirthdaysModal, setShowBirthdaysModal] = useState(false);
   const [modalName, setModalName] = useState('');
   const [modalPhone, setModalPhone] = useState('');
   const [modalPassword, setModalPassword] = useState('');
@@ -300,6 +302,24 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     fetchProfile();
   }, []);
 
+  // Clientes que fazem aniversário hoje
+  const aniversariantesHoje = useMemo(() => {
+    const hoje = new Date();
+    const diaHoje = hoje.getDate();
+    const mesHoje = hoje.getMonth(); // 0-11
+
+    return clientesList.filter((c) => {
+      if (!c.datanascimento) return false;
+      try {
+        const d = new Date(c.datanascimento);
+        if (isNaN(d.getTime())) return false;
+        return d.getUTCDate() === diaHoje && d.getUTCMonth() === mesHoje;
+      } catch {
+        return false;
+      }
+    }).sort((a, b) => a.name.localeCompare(b.name));
+  }, [clientesList]);
+
   // Cores do Tema (Objeto A) — 0=light, 1=dark, 2=super dark
   const A = themeMode === 2 ? {
     bg: "bg-[#030712] text-slate-50",
@@ -369,6 +389,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     refreshGrupos,
     refreshConsorcios,
     refreshProfile: fetchProfile
+  };
+
+  const getAge = (birthdateStr: string) => {
+    try {
+      const birth = new Date(birthdateStr);
+      const today = new Date();
+      let age = today.getFullYear() - birth.getUTCFullYear();
+      const monthDiff = today.getMonth() - birth.getUTCMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getUTCDate())) {
+        age--;
+      }
+      return age;
+    } catch {
+      return 0;
+    }
   };
 
   return (
@@ -511,6 +546,115 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 <Sun size={18} className="text-amber-400" />
               )}
             </button>
+
+            {/* Aniversariantes do Dia */}
+            <div className="relative">
+              <button
+                onClick={() => setShowBirthdaysModal((prev) => !prev)}
+                className={`p-2.5 rounded-full ${A.bgHover} ${A.textMuted} hover:text-[#7C3AED] transition-all relative`}
+                title="Aniversariantes do Dia"
+              >
+                <Gift size={18} className={aniversariantesHoje.length > 0 ? "text-[#7C3AED] dark:text-[#a855f7]" : ""} />
+                {aniversariantesHoje.length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                )}
+              </button>
+
+              {/* Popover Suspenso (Dropdown) */}
+              <AnimatePresence>
+                {showBirthdaysModal && (
+                  <>
+                    {/* Backdrop Invisível para fechar ao clicar fora */}
+                    <div 
+                      className="fixed inset-0 z-40 cursor-default" 
+                      onClick={() => setShowBirthdaysModal(false)}
+                    />
+                    
+                    {/* Popover */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className={`absolute right-0 mt-2 w-80 border ${A.border} ${A.card} rounded-2xl shadow-xl z-50 overflow-hidden`}
+                    >
+                      {/* Header do Popover */}
+                      <div className="flex justify-between items-center p-4 border-b border-dashed border-slate-200 dark:border-slate-700/50">
+                        <div className="flex items-center gap-2">
+                          <Gift size={16} className="text-[#7C3AED] dark:text-[#a855f7]" />
+                          <span className={`font-bold text-sm ${A.textPrimary}`}>Aniversariantes</span>
+                        </div>
+                        {aniversariantesHoje.length > 0 && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-[#7C3AED] dark:text-purple-300">
+                            {aniversariantesHoje.length} HOJE
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Lista dos Aniversariantes */}
+                      <div className="p-4 space-y-3 max-h-[300px] overflow-y-auto">
+                        {aniversariantesHoje.length === 0 ? (
+                          <div className="text-center py-6">
+                            <Gift size={24} className="mx-auto text-slate-400 dark:text-slate-500 opacity-40 mb-2" />
+                            <p className={`text-xs font-semibold ${A.textPrimary}`}>Nenhum aniversariante hoje</p>
+                            <p className={`text-[10px] ${A.textMuted} mt-0.5`}>Não há aniversariantes no dia de hoje. 🎈</p>
+                          </div>
+                        ) : (
+                          aniversariantesHoje.map((c) => {
+                            const age = c.datanascimento ? getAge(c.datanascimento) : null;
+                            const phone = c.phone || '';
+                            const formattedPhone = phone && phone !== '(00) 00000-0000' ? phone.replace(/\D/g, '') : '';
+                            const message = encodeURIComponent(`Parabéns, ${c.name}! Feliz aniversário! Nós da equipe Mundo Fitness desejamos a você muita saúde, felicidades e conquistas! 🎉🎂`);
+                            const whatsappUrl = formattedPhone ? `https://wa.me/55${formattedPhone}?text=${message}` : '#';
+
+                            return (
+                              <div key={c.id} className="flex flex-col gap-2 p-3 bg-slate-50/40 dark:bg-slate-900/10 border border-slate-100/50 dark:border-slate-800/50 rounded-xl">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#7C3AED] flex-shrink-0" />
+                                  <span className={`font-bold text-xs ${A.textPrimary} truncate flex-1`} title={c.name}>
+                                    {c.name}
+                                  </span>
+                                  {age !== null && age > 0 && (
+                                    <span className="text-[10px] text-slate-505 font-medium">
+                                      {age} anos
+                                    </span>
+                                  )}
+                                </div>
+                                {phone && phone !== '(00) 00000-0000' ? (
+                                  <div className="flex justify-between items-center mt-1 pl-3.5">
+                                    <span className={`text-[10px] ${A.textMuted}`}>{phone}</span>
+                                    <a
+                                      href={whatsappUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] font-bold text-emerald-500 hover:text-emerald-600 flex items-center gap-1"
+                                    >
+                                      WhatsApp
+                                    </a>
+                                  </div>
+                                ) : (
+                                  <span className={`text-[10px] ${A.textMuted} pl-3.5`}>Sem telefone</span>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Footer */}
+                      <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800 flex justify-center">
+                        <button
+                          onClick={() => setShowBirthdaysModal(false)}
+                          className="text-xs font-bold text-[#7C3AED] dark:text-[#a855f7] hover:underline cursor-pointer"
+                        >
+                          Fechar Agenda
+                        </button>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             <button className={`p-2.5 rounded-full ${A.bgHover} ${A.textMuted} hover:text-brand-purple transition-all`}>
               <MessageSquare size={18} />

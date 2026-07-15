@@ -103,6 +103,7 @@ const ConsorciosTab: React.FC = () => {
   const [parcelaToDelete, setParcelaToDelete] = useState<Parcela | null>(null);
 
   const [showOpenInstallmentsModal, setShowOpenInstallmentsModal] = useState<boolean>(false);
+  const [openInstallmentsScope, setOpenInstallmentsScope] = useState<'grupo' | 'ativos'>('grupo');
 
   // Estados para edição e exclusão de Cota (Consórcio)
   const [showEditCotaModal, setShowEditCotaModal] = useState<boolean>(false);
@@ -856,7 +857,11 @@ const ConsorciosTab: React.FC = () => {
         {/* Card 1: Total Aberto (Ativos) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
-          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          onClick={() => {
+            setOpenInstallmentsScope('ativos');
+            setShowOpenInstallmentsModal(true);
+          }}
+          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950 cursor-pointer shadow-sm hover:shadow-md"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
@@ -912,9 +917,14 @@ const ConsorciosTab: React.FC = () => {
         {/* Card 3: Em Aberto (Grupo) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
-          onClick={() => selectedGrupoId && setShowOpenInstallmentsModal(true)}
+          onClick={() => {
+            if (selectedGrupoId) {
+              setOpenInstallmentsScope('grupo');
+              setShowOpenInstallmentsModal(true);
+            }
+          }}
           className={`relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950 ${
-            selectedGrupoId ? 'cursor-pointer' : ''
+            selectedGrupoId ? 'cursor-pointer shadow-sm hover:shadow-md' : ''
           }`}
           style={{ backgroundColor: '#EFE0F8' }}
         >
@@ -1736,9 +1746,15 @@ const ConsorciosTab: React.FC = () => {
           >
             <div className="flex justify-between items-center mb-4 border-b border-dashed pb-3 border-slate-200 dark:border-slate-700/50">
               <div>
-                <h3 className={`text-lg font-bold ${A.textPrimary}`}>Parcelas em Aberto (Grupo)</h3>
+                <h3 className={`text-lg font-bold ${A.textPrimary}`}>
+                  {openInstallmentsScope === 'grupo' ? 'Parcelas em Aberto (Grupo)' : 'Parcelas em Aberto (Todos os Grupos Ativos)'}
+                </h3>
                 <p className={`text-xs ${A.textMuted} mt-0.5`}>
-                  Grupo: <strong className="text-brand-purple">{selectedGrupoObj?.periodo_text || ''}</strong> {filterPeriodLabel}
+                  {openInstallmentsScope === 'grupo' ? (
+                    <>Grupo: <strong className="text-brand-purple">{selectedGrupoObj?.periodo_text || ''}</strong></>
+                  ) : (
+                    <strong className="text-brand-purple">Todos os Grupos Ativos</strong>
+                  )} {filterPeriodLabel}
                 </p>
               </div>
               <button
@@ -1751,85 +1767,108 @@ const ConsorciosTab: React.FC = () => {
             </div>
 
             <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-              {filteredGrupoPagamentos.filter((item) => !item.datapagamento_date).length === 0 ? (
-                <p className={`text-sm ${A.textMuted} text-center py-6`}>
-                  Nenhuma parcela em aberto encontrada para este período.
-                </p>
-              ) : (
-                filteredGrupoPagamentos
-                  .filter((item) => !item.datapagamento_date)
-                  .map((item) => {
-                    const consorcio = consorciosList.find((c) => c.id === item.consorcio_id);
-                    const clientName = consorcio?.clientes?.nome || 'Sem Cliente';
-                    const outrasInfo = consorcio?.clientes?.outrasinformacoes || '';
-                    const phone = consorcio?.clientes?.celular || '';
-                    const isOverdue =
-                      item.data_vencimento &&
-                      new Date(item.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0);
+              {(() => {
+                const pagamentosList = openInstallmentsScope === 'grupo' ? filteredGrupoPagamentos : filteredActiveGroupsPagamentos;
+                const emAberto = pagamentosList.filter((item) => !item.datapagamento_date);
 
-                    // Formatar celular para link do WhatsApp se existir
-                    const formattedPhone = phone ? phone.replace(/\D/g, '') : '';
-                    const whatsappUrl = formattedPhone 
-                      ? `https://wa.me/55${formattedPhone}` 
-                      : '#';
+                const sortedEmAberto = [...emAberto].sort((a, b) => {
+                  const consorcioA = consorciosList.find((c) => c.id === a.consorcio_id);
+                  const clientNameA = consorcioA?.clientes?.nome || 'Sem Cliente';
+                  const isOverdueA = !!(a.data_vencimento && new Date(a.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0));
 
-                    return (
-                      <div
-                        key={item.id}
-                        className={`p-4 rounded-2xl border ${A.border} flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isOverdue 
-                            ? 'border-rose-200 bg-rose-50/5 dark:border-rose-950/30' 
-                            : ''
-                        }`}
-                      >
-                        <div className="space-y-1.5 text-left">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`font-bold text-sm ${A.textPrimary}`}>{clientName}</span>
-                            {isOverdue && (
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400">
-                                Atrasado
-                              </span>
-                            )}
-                          </div>
-                          
-                          {outrasInfo && (
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              <span className="font-semibold text-slate-400">Obs:</span> {outrasInfo}
-                            </p>
-                          )}
+                  const consorcioB = consorciosList.find((c) => c.id === b.consorcio_id);
+                  const clientNameB = consorcioB?.clientes?.nome || 'Sem Cliente';
+                  const isOverdueB = !!(b.data_vencimento && new Date(b.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0));
 
-                          {phone ? (
-                            <a
-                              href={whatsappUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-purple hover:underline"
-                            >
-                              <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
-                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.864-9.799.002-2.63-1.023-5.101-2.885-6.963C16.588 2.01 14.12 1.01 11.49 1.01 6.05 1.01 1.625 5.378 1.62 10.81c-.001 1.716.452 3.39 1.311 4.877L1.97 20.082l4.677-1.228zM17.15 14.71c-.302-.15-1.791-.88-2.072-.982-.281-.103-.485-.15-.69.15-.205.302-.797.982-.976 1.186-.18.205-.359.23-.66.08-1.597-.798-2.613-1.47-3.663-3.274-.27-.464.27-.43.774-1.434.085-.17.043-.321-.02-.472-.064-.15-.485-1.168-.665-1.597-.175-.42-.367-.362-.505-.369-.13-.007-.28-.009-.43-.009-.15 0-.395.056-.6.282-.206.226-.785.767-.785 1.87s.803 2.17.916 2.32c.113.15 1.58 2.413 3.827 3.38.535.23 1.034.39 1.389.5.54.17 1.03.145 1.42.087.43-.064 1.79-.731 2.046-1.402.256-.67.256-1.246.18-1.402-.077-.15-.282-.25-.584-.4z"/>
-                              </svg>
-                              {phone}
-                            </a>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">Sem telefone cadastrado</span>
+                  // 1. Atrasados primeiro
+                  if (isOverdueA && !isOverdueB) return -1;
+                  if (!isOverdueA && isOverdueB) return 1;
+
+                  // 2. Ordem alfabética
+                  return clientNameA.localeCompare(clientNameB);
+                });
+
+                if (sortedEmAberto.length === 0) {
+                  return (
+                    <p className={`text-sm ${A.textMuted} text-center py-6`}>
+                      Nenhuma parcela em aberto encontrada para este período.
+                    </p>
+                  );
+                }
+
+                return sortedEmAberto.map((item) => {
+                  const consorcio = consorciosList.find((c) => c.id === item.consorcio_id);
+                  const clientName = consorcio?.clientes?.nome || 'Sem Cliente';
+                  const outrasInfo = consorcio?.clientes?.outrasinformacoes || '';
+                  const phone = consorcio?.clientes?.celular || '';
+                  const isOverdue =
+                    item.data_vencimento &&
+                    new Date(item.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0);
+
+                  // Formatar celular para link do WhatsApp se existir
+                  const formattedPhone = phone ? phone.replace(/\D/g, '') : '';
+                  const whatsappUrl = formattedPhone 
+                    ? `https://wa.me/55${formattedPhone}` 
+                    : '#';
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-4 rounded-2xl border ${A.border} flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isOverdue 
+                          ? 'border-rose-200 bg-rose-50/5 dark:border-rose-950/30' 
+                          : ''
+                      }`}
+                    >
+                      <div className="space-y-1.5 text-left">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`font-bold text-sm ${A.textPrimary}`}>{clientName}</span>
+                          {isOverdue && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400">
+                              Atrasado
+                            </span>
                           )}
                         </div>
+                        
+                        {outrasInfo && (
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <span className="font-semibold text-slate-400">Obs:</span> {outrasInfo}
+                          </p>
+                        )}
 
-                        <div className="text-right space-y-1 sm:self-center">
-                          <p className="font-extrabold text-sm text-[#7C3AED] dark:text-[#a855f7]">
-                            {new Intl.NumberFormat('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL'
-                            }).format(item.valor_parcela || 0)}
-                          </p>
-                          <p className={`text-[10px] font-semibold ${A.textMuted}`}>
-                            Ref: {item.mesano_text} • Venc: {formatGroupDate(item.data_vencimento)}
-                          </p>
-                        </div>
+                        {phone ? (
+                          <a
+                            href={whatsappUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-purple hover:underline"
+                          >
+                            <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.864-9.799.002-2.63-1.023-5.101-2.885-6.963C16.588 2.01 14.12 1.01 11.49 1.01 6.05 1.01 1.625 5.378 1.62 10.81c-.001 1.716.452 3.39 1.311 4.877L1.97 20.082l4.677-1.228zM17.15 14.71c-.302-.15-1.791-.88-2.072-.982-.281-.103-.485-.15-.69.15-.205.302-.797.982-.976 1.186-.18.205-.359.23-.66.08-1.597-.798-2.613-1.47-3.663-3.274-.27-.464.27-.43.774-1.434.085-.17.043-.321-.02-.472-.064-.15-.485-1.168-.665-1.597-.175-.42-.367-.362-.505-.369-.13-.007-.28-.009-.43-.009-.15 0-.395.056-.6.282-.206.226-.785.767-.785 1.87s.803 2.17.916 2.32c.113.15 1.58 2.413 3.827 3.38.535.23 1.034.39 1.389.5.54.17 1.03.145 1.42.087.43-.064 1.79-.731 2.046-1.402.256-.67.256-1.246.18-1.402-.077-.15-.282-.25-.584-.4z"/>
+                            </svg>
+                            {phone}
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Sem telefone cadastrado</span>
+                        )}
                       </div>
-                    );
-                  })
-              )}
+
+                      <div className="text-right space-y-1 sm:self-center">
+                        <p className="font-extrabold text-sm text-[#7C3AED] dark:text-[#a855f7]">
+                          {new Intl.NumberFormat('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL'
+                          }).format(item.valor_parcela || 0)}
+                        </p>
+                        <p className={`text-[10px] font-semibold ${A.textMuted}`}>
+                          {openInstallmentsScope === 'ativos' && item.grupo_text ? `Grupo: ${item.grupo_text} • ` : ''}
+                          Ref: {item.mesano_text} • Venc: {formatGroupDate(item.data_vencimento)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
             <div className="flex justify-end pt-4 mt-4 border-t border-dashed border-slate-200 dark:border-slate-700/50">
               <button

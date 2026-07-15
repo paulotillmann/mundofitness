@@ -98,7 +98,7 @@ const CrediariosTab: React.FC = () => {
   const [selectedClienteId, setSelectedClienteId] = useState<string | null>(null);
   // Filtros da Coluna 1 (Clientes)
   const [clientSearch, setClientSearch] = useState<string>('');
-  const [clientStatusFilter, setClientStatusFilter] = useState<'Todos' | 'Com Pendências' | 'Quitados'>('Todos');
+  const [clientStatusFilter, setClientStatusFilter] = useState<'Todos' | 'Com Pendências' | 'Com Pendência no Mês' | 'Quitados'>('Todos');
 
   // Filtros da Coluna 2 (Lançamentos)
   const [launchSearch, setLaunchSearch] = useState<string>('');
@@ -106,7 +106,19 @@ const CrediariosTab: React.FC = () => {
 
   // Paginação dos Lançamentos (Coluna 2)
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const itemsPerPage = 6; // 6 lançamentos por página para caber perfeitamente no container h-[650px]
+  const [itemsPerPage, setItemsPerPage] = useState<number>(6);
+
+  useEffect(() => {
+    const handleResize = () => {
+      // Ajusta dinamicamente a quantidade de itens por página de acordo com a altura da janela
+      const availableHeight = window.innerHeight - 630;
+      const count = Math.max(4, Math.floor(availableHeight / 60));
+      setItemsPerPage(count);
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -223,6 +235,7 @@ const CrediariosTab: React.FC = () => {
   const [baixaDataPagamento, setBaixaDataPagamento] = useState<string>('');
   const [baixaFormaPagamento, setBaixaFormaPagamento] = useState<string>('PIX');
   const [baixaValorTaxaCartao, setBaixaValorTaxaCartao] = useState<string>('0');
+  const [baixaReferenteA, setBaixaReferenteA] = useState<string>('');
   const [baixaSubmitting, setBaixaSubmitting] = useState<boolean>(false);
   const [baixaError, setBaixaError] = useState<string | null>(null);
 
@@ -233,6 +246,7 @@ const CrediariosTab: React.FC = () => {
   const [editDataCompra, setEditDataCompra] = useState<string>('');
   const [editSubmitting, setEditSubmitting] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [showAbertoCrediariosModal, setShowAbertoCrediariosModal] = useState<boolean>(false);
 
   const handleOpenBaixaModal = (launch: Crediario) => {
     setSelectedLaunchForBaixa(launch);
@@ -247,6 +261,7 @@ const CrediariosTab: React.FC = () => {
     
     setBaixaFormaPagamento(launch.forma_pagamento || 'PIX');
     setBaixaValorTaxaCartao(formatCurrencyInput(Number(launch.valor_taxa_cartao || 0)));
+    setBaixaReferenteA(launch.referente_a || '');
     setBaixaError(null);
     setShowBaixaModal(true);
   };
@@ -277,6 +292,7 @@ const CrediariosTab: React.FC = () => {
           data_pagamento: new Date(baixaDataPagamento + 'T12:00:00Z').toISOString(),
           forma_pagamento: baixaFormaPagamento,
           valor_taxa_cartao: taxaNum,
+          referente_a: baixaReferenteA,
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedLaunchForBaixa.id)
@@ -554,10 +570,10 @@ const CrediariosTab: React.FC = () => {
             historico_id: finalHistoricoId,
             tipo_pagamento: 'A vista',
             valor_pagar: valorTotalNum,
-            valor_pago: valorTotalNum,
-            data_pagamento: new Date(createDataVencimento + 'T12:00:00Z').toISOString(),
+            valor_pago: 0,
+            data_pagamento: null,
             data_vencimento: new Date(createDataVencimento + 'T12:00:00Z').toISOString(),
-            forma_pagamento: 'PIX',
+            forma_pagamento: null,
             valor_taxa_cartao: 0,
             referente_a: createReferenteA.trim() || null,
             data_compra: createDataCompra ? new Date(createDataCompra + 'T12:00:00Z').toISOString() : null
@@ -716,6 +732,30 @@ const CrediariosTab: React.FC = () => {
     };
   }, [filteredByPeriod]);
 
+  // Crediários em aberto do período geral filtrado
+  const abertoCrediarios = useMemo(() => {
+    const list = filteredByPeriod.filter((c) => {
+      const pagar = Number(c.valor_pagar || 0);
+      const pago = Number(c.valor_pago || 0);
+      return !c.data_pagamento && (pagar - pago > 0);
+    });
+
+    return list.sort((a, b) => {
+      const clientNameA = a.crediarios_clientes?.clientes?.nome || 'Sem Cliente';
+      const isOverdueA = !!(a.data_vencimento && new Date(a.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0));
+
+      const clientNameB = b.crediarios_clientes?.clientes?.nome || 'Sem Cliente';
+      const isOverdueB = !!(b.data_vencimento && new Date(b.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0));
+
+      // 1. Atrasados primeiro
+      if (isOverdueA && !isOverdueB) return -1;
+      if (!isOverdueA && isOverdueB) return 1;
+
+      // 2. Ordem alfabética
+      return clientNameA.localeCompare(clientNameB);
+    });
+  }, [filteredByPeriod]);
+
   // Filtrar todos os clientes cadastrados pela barra de busca do modal
   const filteredDbClientes = useMemo(() => {
     const term = newLaunchClientSearch.toLowerCase().trim();
@@ -798,13 +838,20 @@ const CrediariosTab: React.FC = () => {
       let matchStatus = true;
       if (clientStatusFilter === 'Com Pendências') {
         matchStatus = client.totalAberto > 0;
+      } else if (clientStatusFilter === 'Com Pendência no Mês') {
+        matchStatus = client.launches.some(launch => {
+          const pagar = Number(launch.valor_pagar || 0);
+          const pago = Number(launch.valor_pago || 0);
+          const isAberto = !launch.data_pagamento && pagar > pago;
+          return isAberto && matchPeriod(launch);
+        });
       } else if (clientStatusFilter === 'Quitados') {
         matchStatus = client.totalAberto === 0;
       }
 
       return matchText && matchGlobal && matchStatus;
     }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  }, [clientGroups, clientSearch, globalSearch, clientStatusFilter]);
+  }, [clientGroups, clientSearch, globalSearch, clientStatusFilter, selectedMonth, selectedYear]);
 
   // Cliente Ativo e Lançamentos
   const selectedClientData = useMemo(() => {
@@ -856,7 +903,7 @@ const CrediariosTab: React.FC = () => {
   const paginatedLaunches = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredLaunches.slice(start, start + itemsPerPage);
-  }, [filteredLaunches, currentPage]);
+  }, [filteredLaunches, currentPage, itemsPerPage]);
 
   const getPageNumbers = () => {
     const pages = [];
@@ -1071,7 +1118,8 @@ const CrediariosTab: React.FC = () => {
 
         {/* Total Em Aberto */}
         <div
-          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          onClick={() => setShowAbertoCrediariosModal(true)}
+          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950 cursor-pointer shadow-sm hover:shadow-md"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
@@ -1141,7 +1189,7 @@ const CrediariosTab: React.FC = () => {
       {/* Seção Principal de Duas Colunas */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
         {/* COLUNA 1: Lista de Clientes (lg:col-span-3) */}
-        <div className={`lg:col-span-3 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        <div className={`lg:col-span-3 flex flex-col lg:h-[calc(100vh-380px)] lg:min-h-[480px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {/* Header e Filtros da Coluna 1 */}
           <div className="p-4 border-b border-dashed border-slate-200 dark:border-slate-700 space-y-3 bg-slate-50/20 dark:bg-slate-900/10">
             <div className="flex items-center justify-between">
@@ -1183,8 +1231,8 @@ const CrediariosTab: React.FC = () => {
             </div>
             
             {/* Filtros Rápido de Status (Pill) */}
-            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {(['Todos', 'Com Pendências', 'Quitados'] as const).map((status) => {
+            <div className="flex flex-wrap gap-1.5 pb-1">
+              {(['Todos', 'Com Pendências', 'Com Pendência no Mês', 'Quitados'] as const).map((status) => {
                 const isSelected = clientStatusFilter === status;
                 return (
                   <button
@@ -1204,7 +1252,7 @@ const CrediariosTab: React.FC = () => {
           </div>
 
           {/* Grid de Cards de Clientes */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {loading ? (
               <div className="flex flex-col items-center justify-center h-full gap-3">
                 <div className="w-8 h-8 border-3 border-brand-purple border-t-transparent rounded-full animate-spin" />
@@ -1272,7 +1320,7 @@ const CrediariosTab: React.FC = () => {
         </div>
 
         {/* COLUNA 2: Lançamentos Detalhados (lg:col-span-9) */}
-        <div className={`lg:col-span-9 flex flex-col h-[650px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        <div className={`lg:col-span-9 flex flex-col lg:h-[calc(100vh-380px)] lg:min-h-[480px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {selectedClientData ? (
             <>
               {/* Header do Cliente Selecionado */}
@@ -1568,6 +1616,135 @@ const CrediariosTab: React.FC = () => {
           )}
         </div>
       </div>
+      {/* MODAL: DETALHES DE CREDIÁRIOS EM ABERTO */}
+      <AnimatePresence>
+        {showAbertoCrediariosModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`${A.card} w-full max-w-lg p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+            >
+              <div className="flex justify-between items-center mb-4 border-b border-dashed pb-3 border-slate-200 dark:border-slate-700/50">
+                <div>
+                  <h3 className={`text-lg font-bold ${A.textPrimary}`}>Crediários em Aberto (Período)</h3>
+                  <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                    Período: <strong className="text-brand-purple">
+                      {selectedMonth !== null && selectedYear !== null 
+                        ? `${monthsNames[selectedMonth]}/${selectedYear}` 
+                        : 'Todos os Períodos'}
+                    </strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAbertoCrediariosModal(false)}
+                  className={`p-1.5 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                {abertoCrediarios.length === 0 ? (
+                  <p className={`text-sm ${A.textMuted} text-center py-6`}>
+                    Nenhum crediário em aberto encontrado para este período.
+                  </p>
+                ) : (
+                  abertoCrediarios.map((item) => {
+                    const clientName = item.crediarios_clientes?.clientes?.nome || 'Sem Cliente';
+                    const phone = item.crediarios_clientes?.clientes?.celular || '';
+                    const outrasInfo = item.crediarios_clientes?.clientes?.outrasinformacoes || '';
+                    const pagar = Number(item.valor_pagar || 0);
+                    const pago = Number(item.valor_pago || 0);
+                    const valorPendente = pagar - pago;
+                    const isOverdue =
+                      item.data_vencimento &&
+                      new Date(item.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0);
+
+                    // Formatar celular para link do WhatsApp se existir
+                    const formattedPhone = phone ? phone.replace(/\D/g, '') : '';
+                    const whatsappUrl = formattedPhone 
+                      ? `https://wa.me/55${formattedPhone}` 
+                      : '#';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-4 rounded-2xl border ${A.border} flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isOverdue 
+                            ? 'border-rose-200 bg-rose-50/5 dark:border-rose-950/30' 
+                            : ''
+                        }`}
+                      >
+                        <div className="space-y-1.5 text-left">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-bold text-sm ${A.textPrimary}`}>{clientName}</span>
+                            {isOverdue && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400">
+                                Atrasado
+                              </span>
+                            )}
+                          </div>
+                          
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <span className="font-semibold text-slate-400">Ref:</span> {item.referente_a || '-'}
+                          </p>
+
+                          {outrasInfo && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              <span className="font-semibold text-slate-400">Obs:</span> {outrasInfo}
+                            </p>
+                          )}
+
+                          {phone ? (
+                            <a
+                              href={whatsappUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-purple hover:underline"
+                            >
+                              <svg className="w-3.5 h-3.5 fill-current text-emerald-500" viewBox="0 0 24 24">
+                                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.864-9.799.002-2.63-1.023-5.101-2.885-6.963C16.588 2.01 14.12 1.01 11.49 1.01 6.05 1.01 1.625 5.378 1.62 10.81c-.001 1.716.452 3.39 1.311 4.877L1.97 20.082l4.677-1.228zM17.15 14.71c-.302-.15-1.791-.88-2.072-.982-.281-.103-.485-.15-.69.15-.205.302-.797.982-.976 1.186-.18.205-.359.23-.66.08-1.597-.798-2.613-1.47-3.663-3.274-.27-.464.27-.43.774-1.434.085-.17.043-.321-.02-.472-.064-.15-.485-1.168-.665-1.597-.175-.42-.367-.362-.505-.369-.13-.007-.28-.009-.43-.009-.15 0-.395.056-.6.282-.206.226-.785.767-.785 1.87s.803 2.17.916 2.32c.113.15 1.58 2.413 3.827 3.38.535.23 1.034.39 1.389.5.54.17 1.03.145 1.42.087.43-.064 1.79-.731 2.046-1.402.256-.67.256-1.246.18-1.402-.077-.15-.282-.25-.584-.4z"/>
+                              </svg>
+                              {phone}
+                            </a>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">Sem telefone cadastrado</span>
+                          )}
+                        </div>
+
+                        <div className="text-right space-y-1 sm:self-center">
+                          <p className="font-extrabold text-sm text-[#7C3AED] dark:text-[#a855f7]">
+                            {new Intl.NumberFormat('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL'
+                            }).format(valorPendente)}
+                          </p>
+                          <p className={`text-[10px] font-semibold ${A.textMuted}`}>
+                            Venc: {formatDate(item.data_vencimento)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="flex justify-end pt-4 mt-4 border-t border-dashed border-slate-200 dark:border-slate-700/50">
+                <button
+                  type="button"
+                  onClick={() => setShowAbertoCrediariosModal(false)}
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-brand-purple hover:bg-brand-purple/90 rounded-xl transition-all shadow-md shadow-brand-purple/10 cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* MODAL DE BAIXA DE PAGAMENTO */}
       <AnimatePresence>
         {showBaixaModal && selectedLaunchForBaixa && (
@@ -1622,6 +1799,19 @@ const CrediariosTab: React.FC = () => {
               </div>
 
               <form onSubmit={handleConfirmBaixa} className="space-y-4 pt-2">
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Referente a
+                  </label>
+                  <input
+                    type="text"
+                    value={baixaReferenteA}
+                    onChange={(e) => setBaixaReferenteA(e.target.value)}
+                    placeholder="Descrição referente ao lançamento..."
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
                     Valor a Receber Agora *

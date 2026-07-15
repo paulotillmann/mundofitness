@@ -1490,23 +1490,23 @@ const DashboardTab: React.FC = () => {
             </div>
 
             {/* Footer Summary */}
-            <div className="border-t border-slate-100 dark:border-slate-800/80 pt-3 flex flex-col gap-1.5 mt-2">
-              <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-[#7C3AED] dark:text-[#8B5CF6]">Total Pago:</span>
-                <span className={A.textPrimary}>
+            <div className="border-t border-slate-100 dark:border-slate-800/80 pt-3 flex flex-col gap-2 mt-2">
+              <div className="flex justify-between items-center text-[18px] font-bold">
+                <span className="text-[#6D28D9] dark:text-[#a78bfa] font-bold">Total Pago:</span>
+                <span className="text-slate-900 dark:text-white font-extrabold">
                   {formatCurrency(groupComparisonList.reduce((acc, curr) => acc + curr.paid, 0))}
                 </span>
               </div>
-              <div className="flex justify-between items-center text-xs font-bold">
-                <span className="text-[#06B6D4] dark:text-[#22D3EE]">Total a Receber:</span>
-                <span className={A.textPrimary}>
+              <div className="flex justify-between items-center text-[18px] font-bold">
+                <span className="text-[#0E7490] dark:text-[#22D3EE] font-bold">Total a Receber:</span>
+                <span className="text-slate-900 dark:text-white font-extrabold">
                   {formatCurrency(groupComparisonList.reduce((acc, curr) => acc + curr.pending, 0))}
                 </span>
               </div>
-              <div className="border-t border-dashed border-slate-100 dark:border-slate-800/40 my-0.5" />
-              <div className="flex justify-between items-center text-sm font-bold">
-                <span className={A.textMuted}>Total Projetado:</span>
-                <span className={A.textPrimary}>
+              <div className="border-t border-dashed border-slate-100 dark:border-slate-800/40 my-1" />
+              <div className="flex justify-between items-center text-[20px] font-bold">
+                <span className="text-slate-800 dark:text-slate-200 font-bold">Total Projetado:</span>
+                <span className="text-slate-900 dark:text-[#a78bfa] font-extrabold">
                   {formatCurrency(groupComparisonList.reduce((acc, curr) => acc + curr.paid + curr.pending, 0))}
                 </span>
               </div>
