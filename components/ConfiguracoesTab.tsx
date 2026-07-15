@@ -22,6 +22,19 @@ import {
   X
 } from 'lucide-react';
 
+const sanitizeDate = (dateStr: any): string | null => {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  if (dateStr.startsWith('0000-') || dateStr.includes('-00-') || dateStr.includes('-00T')) return null;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    if (d.getUTCFullYear() <= 1000) return null;
+    return dateStr;
+  } catch {
+    return null;
+  }
+};
+
 const ConfiguracoesTab: React.FC = () => {
   const ctx = useContext(DashboardContext)!;
   const { A, refreshClientes, refreshGrupos, refreshConsorcios, currentUser, refreshProfile } = ctx;
@@ -540,12 +553,12 @@ const ConfiguracoesTab: React.FC = () => {
           nome: c.nome_text || 'Sem nome',
           celular: c.celular_text || null,
           endereco: c.endereco_text || null,
-          datanascimento: c.datanascimento_date || null,
+          datanascimento: sanitizeDate(c.datanascimento_date),
           outrasinformacoes: c.outrasinformacoes_text || null,
           vestetamanho: c.vestetamanho_text || null,
           plano: mappedPlan,
           status: 'Ativo',
-          data_cadastro: c['Created Date'] || null
+          data_cadastro: sanitizeDate(c['Created Date'])
         };
       });
 
@@ -579,11 +592,11 @@ const ConfiguracoesTab: React.FC = () => {
         periodo_text: g.periodo_text || g.title || 'Sem Nome',
         valor_number: g.valor_number !== undefined ? g.valor_number : null,
         valorcota_number: g.valorcota_number !== undefined ? g.valorcota_number : null,
-        mesinicial_date: g.mesinicial_date || null,
-        mesfinal_date: g.mesfinal_date || null,
+        mesinicial_date: sanitizeDate(g.mesinicial_date),
+        mesfinal_date: sanitizeDate(g.mesfinal_date),
         encerrado_boolean: g.encerrado_boolean !== undefined ? g.encerrado_boolean : false,
-        created_at: g['Created Date'] || new Date().toISOString(),
-        updated_at: g['Modified Date'] || new Date().toISOString()
+        created_at: sanitizeDate(g['Created Date']) || new Date().toISOString(),
+        updated_at: sanitizeDate(g['Modified Date']) || new Date().toISOString()
       }));
 
       const { error } = await supabase.from('grupos').upsert(upsertData, {
@@ -636,20 +649,23 @@ const ConfiguracoesTab: React.FC = () => {
           bubble_id: c._id || c.id,
           cliente_id: bubbleClient && clientMap.get(bubbleClient) || null,
           grupo_id: bubbleGroup && groupMap.get(bubbleGroup) || null,
-          dataretirada_date: c.dataretirada_date || null,
+          dataretirada_date: sanitizeDate(c.dataretirada_date),
           vencimentodia_number: c.vencimentodia_number !== undefined ? c.vencimentodia_number : null,
           cotano_number: c.cotano_number !== undefined ? c.cotano_number : null,
           mesretirada_text: (() => {
             if (c.mesretiradas_date) {
               try {
-                const d = new Date(c.mesretiradas_date);
-                const meses = [
-                  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-                ];
-                const mesNome = meses[d.getUTCMonth()];
-                const ano = d.getUTCFullYear();
-                return `${mesNome}/${ano}`;
+                const sanitizedMesRetirada = sanitizeDate(c.mesretiradas_date);
+                if (sanitizedMesRetirada) {
+                  const d = new Date(sanitizedMesRetirada);
+                  const meses = [
+                    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                  ];
+                  const mesNome = meses[d.getUTCMonth()];
+                  const ano = d.getUTCFullYear();
+                  return `${mesNome}/${ano}`;
+                }
               } catch (e) {
                 console.error('Erro ao converter mesretiradas_date:', e);
               }
@@ -658,7 +674,7 @@ const ConfiguracoesTab: React.FC = () => {
             const mes = c.mesretirada_option_meses;
             if (!mes) return null;
             
-            const dateStr = c.dataretirada_date || c['Created Date'];
+            const dateStr = sanitizeDate(c.dataretirada_date) || sanitizeDate(c['Created Date']);
             if (!dateStr) return mes;
             try {
               const year = new Date(dateStr).getUTCFullYear();
@@ -667,8 +683,8 @@ const ConfiguracoesTab: React.FC = () => {
               return mes;
             }
           })(),
-          created_at: c['Created Date'] || new Date().toISOString(),
-          updated_at: c['Modified Date'] || new Date().toISOString()
+          created_at: sanitizeDate(c['Created Date']) || new Date().toISOString(),
+          updated_at: sanitizeDate(c['Modified Date']) || new Date().toISOString()
         };
       });
 
@@ -718,14 +734,14 @@ const ConfiguracoesTab: React.FC = () => {
           bubble_id: p._id || p.id,
           consorcio_id: consorcioInfo ? consorcioInfo.id : null,
           grupo_id: consorcioInfo ? consorcioInfo.grupo_id : null,
-          datapagamento_date: p.datapagamento_date || null,
+          datapagamento_date: sanitizeDate(p.datapagamento_date),
           mesano_text: p.mesano_text || null,
           valorpago_number: p.valorpago_number !== undefined ? p.valorpago_number : null,
           grupo_text: p.grupo_text || null,
           valor_parcela: p.valorpago_number !== undefined ? p.valorpago_number : null,
-          data_vencimento: p.datapagamento_date || null,
-          created_at: p['Created Date'] || new Date().toISOString(),
-          updated_at: p['Modified Date'] || new Date().toISOString()
+          data_vencimento: sanitizeDate(p.datapagamento_date),
+          created_at: sanitizeDate(p['Created Date']) || new Date().toISOString(),
+          updated_at: sanitizeDate(p['Modified Date']) || new Date().toISOString()
         };
       });
 
@@ -975,16 +991,16 @@ const ConfiguracoesTab: React.FC = () => {
           bubble_id: item._id || item.id,
           crediario_cliente_id: crediarioClienteId,
           historico_id: localHistoricoId,
-          data_pagamento: item.datapagamento_date || null,
-          data_vencimento: item.datavencimento_date || null,
+          data_pagamento: sanitizeDate(item.datapagamento_date),
+          data_vencimento: sanitizeDate(item.datavencimento_date),
           forma_pagamento: normalizeFormaPagamento(item.formapagamento_option_formapagamentos),
           parcelas: item.parcelas_text || null,
           tipo_pagamento: normalizeTipoPagamento(item.tipopagamento_option_tipopagamentos),
           valor_pagar: item.valorpagar_number !== undefined ? item.valorpagar_number : null,
           valor_pago: item.valorpago_number !== undefined ? item.valorpago_number : null,
           valor_taxa_cartao: item.valortaxacartao_number !== undefined ? item.valortaxacartao_number : null,
-          created_at: item['Created Date'] || new Date().toISOString(),
-          updated_at: item['Modified Date'] || new Date().toISOString()
+          created_at: sanitizeDate(item['Created Date']) || new Date().toISOString(),
+          updated_at: sanitizeDate(item['Modified Date']) || new Date().toISOString()
         });
       }
 
