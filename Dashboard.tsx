@@ -265,7 +265,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           .from('consorcios')
           .select(`
             *,
-            clientes (nome, outrasinformacoes, celular),
+            clientes (nome, outrasinformacoes, celular, vestetamanho),
             grupos (periodo_text, valorcota_number, encerrado_boolean)
           `)
           .order('created_at', { ascending: false })

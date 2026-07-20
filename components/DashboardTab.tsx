@@ -1238,20 +1238,31 @@ const DashboardTab: React.FC = () => {
                             {c.clientes?.nome || 'Cliente sem nome'}
                           </p>
 
-                          {/* Contato do Cliente */}
-                          {c.clientes?.celular && (
-                            <a
-                              href={getWhatsAppLink(c.clientes.celular)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs text-brand-purple hover:underline font-bold mt-1"
-                              title="Enviar mensagem no WhatsApp"
-                            >
-                              <Phone size={12} />
-                              <span>{c.clientes.celular}</span>
-                              <ExternalLink size={10} />
-                            </a>
-                          )}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                            {/* Contato do Cliente */}
+                            {c.clientes?.celular && (
+                              <a
+                                href={getWhatsAppLink(c.clientes.celular)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs text-brand-purple hover:underline font-bold"
+                                title="Enviar mensagem no WhatsApp"
+                              >
+                                <Phone size={12} />
+                                <span>{c.clientes.celular}</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            )}
+                            
+                            {c.clientes?.vestetamanho && (
+                              <>
+                                {c.clientes?.celular && <span className="text-slate-300 dark:text-slate-700 font-bold">•</span>}
+                                <span className="text-xs font-bold text-slate-400">
+                                  Tamanho: <span className="text-brand-purple font-extrabold">{c.clientes.vestetamanho}</span>
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
 
                         {/* Cota Info */}
