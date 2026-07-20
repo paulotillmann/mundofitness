@@ -1256,18 +1256,26 @@ const ConsorciosTab: React.FC = () => {
                 <span style={{ fontSize: '16pt' }} className="font-extrabold text-purple-955 block line-clamp-1 leading-tight">
                   {clienteRetiradaMesObj.clientes?.nome}
                 </span>
-                <div className="flex items-center">
-                  {clienteContempladoStatus === 'atraso' ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                      Em Atraso
+                <div className="flex flex-col gap-1 mt-1">
+                  <div className="flex items-center">
+                    {clienteContempladoStatus === 'atraso' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                        Em Atraso
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Em Dia
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-bold text-purple-900/60">
+                    Retirada:{' '}
+                    <span className="text-brand-purple font-extrabold">
+                      {formatRetiradaDate(clienteRetiradaMesObj.dataretirada_date)}
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Em Dia
-                    </span>
-                  )}
+                  </p>
                 </div>
               </>
             ) : (
