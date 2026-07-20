@@ -15,7 +15,9 @@ import {
   Plus,
   Trash2,
   Edit2,
-  X
+  X,
+  Filter,
+  Search
 } from 'lucide-react';
 
 interface Grupo {
@@ -85,6 +87,11 @@ const ConsorciosTab: React.FC = () => {
   const [filterYear, setFilterYear] = useState<number>(new Date().getFullYear());
   const [isFilterActive, setIsFilterActive] = useState<boolean>(true);
   const [showFilterCalendarPopover, setShowFilterCalendarPopover] = useState<boolean>(false);
+
+  // Estados do Filtro de Cliente
+  const [selectedFilterClienteId, setSelectedFilterClienteId] = useState<string | null>(null);
+  const [clientFilterQuery, setClientFilterQuery] = useState<string>('');
+  const [showClientFilterPopover, setShowClientFilterPopover] = useState<boolean>(false);
 
   // Estados dos Modais de Parcelas
   const [showGerarParcelasModal, setShowGerarParcelasModal] = useState<boolean>(false);
@@ -202,11 +209,21 @@ const ConsorciosTab: React.FC = () => {
     fetchPagamentos(selectedConsorcioId);
   }, [selectedConsorcioId]);
 
-  // Limpar seleção de consórcio quando mudar o grupo selecionado
+  // Limpar ou auto-selecionar cota do cliente filtrado quando mudar o grupo selecionado
   useEffect(() => {
+    if (selectedGrupoId && selectedFilterClienteId) {
+      const cotaDoCliente = consorciosList.find(
+        (c) => c.grupo_id === selectedGrupoId && c.cliente_id === selectedFilterClienteId
+      );
+      if (cotaDoCliente) {
+        setSelectedConsorcioId(cotaDoCliente.id);
+        setSelectedClienteNome(cotaDoCliente.clientes?.nome || 'Sem Cliente');
+        return;
+      }
+    }
     setSelectedConsorcioId(null);
     setSelectedClienteNome('');
-  }, [selectedGrupoId]);
+  }, [selectedGrupoId, selectedFilterClienteId, consorciosList]);
 
   // Carregar dados de pagamentos do grupo quando o grupo selecionado mudar
   useEffect(() => {
@@ -238,10 +255,32 @@ const ConsorciosTab: React.FC = () => {
     if (!text) return null;
     const parts = text.split('/');
     if (parts.length !== 2) return null;
-    const [mStr, yStr] = parts;
-    const monthIdx = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].indexOf(mStr);
-    const yearVal = 2000 + parseInt(yStr);
-    if (monthIdx === -1 || isNaN(yearVal)) return null;
+    let [mStr, yStr] = parts;
+    
+    mStr = mStr.trim().toLowerCase();
+    yStr = yStr.trim();
+
+    const monthsFull = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const monthsAbbr = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+    
+    let monthIdx = monthsFull.indexOf(mStr);
+    if (monthIdx === -1) {
+      const normalizedStr = mStr.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      monthIdx = monthsFull.map(m => m.normalize("NFD").replace(/[\u0300-\u036f]/g, "")).indexOf(normalizedStr);
+    }
+    if (monthIdx === -1) {
+      monthIdx = monthsAbbr.indexOf(mStr.substring(0, 3));
+    }
+
+    if (monthIdx === -1) return null;
+
+    let yearVal = parseInt(yStr);
+    if (isNaN(yearVal)) return null;
+
+    if (yStr.length === 2) {
+      yearVal = 2000 + yearVal;
+    }
+
     return { month: monthIdx, year: yearVal };
   };
 
@@ -569,9 +608,33 @@ const ConsorciosTab: React.FC = () => {
     return sortedClientes.filter((cli) => (cli.name || '').toLowerCase().includes(s));
   }, [sortedClientes, clientSearchQuery]);
 
+  // Clientes filtrados para o popover de filtro de clientes
+  const filteredFilterClientes = useMemo(() => {
+    const s = clientFilterQuery.toLowerCase().trim();
+    
+    const sorted = [...clientesList].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      return nameA.localeCompare(nameB, 'pt-BR');
+    });
+
+    if (!s) return sorted;
+    return sorted.filter((cli) => (cli.name || '').toLowerCase().includes(s));
+  }, [clientesList, clientFilterQuery]);
+
+  // Conjunto de IDs de grupos onde o cliente filtrado está definido
+  const gruposComCliente = useMemo(() => {
+    if (!selectedFilterClienteId) return null;
+    return new Set(
+      consorciosList
+        .filter((c) => c.cliente_id === selectedFilterClienteId)
+        .map((c) => c.grupo_id)
+    );
+  }, [consorciosList, selectedFilterClienteId]);
+
   // Listagem de Grupos Ativos / Todos (Coluna 1)
   const filteredGruposList = useMemo(() => {
-    const list = gruposList.filter((g) =>
+    let list = gruposList.filter((g) =>
       gruposFilterType === 'todos'
         ? true
         : gruposFilterType === 'ativos'
@@ -580,8 +643,16 @@ const ConsorciosTab: React.FC = () => {
     );
 
     const s = searchGrupo.toLowerCase().trim();
-    return s ? list.filter((g) => (g.periodo_text || '').toLowerCase().includes(s)) : list;
-  }, [gruposList, gruposFilterType, searchGrupo]);
+    if (s) {
+      list = list.filter((g) => (g.periodo_text || '').toLowerCase().includes(s));
+    }
+
+    if (selectedFilterClienteId && gruposComCliente) {
+      list = list.filter((g) => gruposComCliente.has(g.id));
+    }
+
+    return list;
+  }, [gruposList, gruposFilterType, searchGrupo, selectedFilterClienteId, gruposComCliente]);
 
   // Garantir seleção de grupo inicial
   useEffect(() => {
@@ -614,8 +685,31 @@ const ConsorciosTab: React.FC = () => {
       })
       : list;
 
-    // Ordenar por nome de cliente
+    // Ordenar por mês de retirada (e nome do cliente em caso de empate/não retirado)
     return [...matches].sort((a, b) => {
+      const getRetiradaValue = (c: any) => {
+        if (c.mesretirada_text) {
+          const parsed = parseMesAnoText(c.mesretirada_text);
+          if (parsed) {
+            return parsed.year * 12 + parsed.month;
+          }
+        }
+        if (c.dataretirada_date) {
+          const d = new Date(c.dataretirada_date);
+          if (!isNaN(d.getTime())) {
+            return d.getUTCFullYear() * 12 + d.getUTCMonth();
+          }
+        }
+        return Infinity; // Quem não retirou fica por último
+      };
+
+      const valA = getRetiradaValue(a);
+      const valB = getRetiradaValue(b);
+
+      if (valA !== valB) {
+        return valA - valB;
+      }
+
       const nameA = (a.clientes?.nome || '').toLowerCase();
       const nameB = (b.clientes?.nome || '').toLowerCase();
       return nameA.localeCompare(nameB, 'pt-BR');
@@ -734,6 +828,51 @@ const ConsorciosTab: React.FC = () => {
     return `em ${monthStr}/${yearShort}`;
   }, [isFilterActive, filterMonth, filterYear]);
 
+  const targetMonth = isFilterActive ? filterMonth : new Date().getMonth();
+  const targetYear = isFilterActive ? filterYear : new Date().getFullYear();
+
+  const clienteRetiradaMesObj = useMemo(() => {
+    if (!selectedGrupoId) return null;
+    return consorciosList.find((c) => {
+      if (c.grupo_id !== selectedGrupoId) return false;
+      
+      if (c.mesretirada_text) {
+        const parsed = parseMesAnoText(c.mesretirada_text);
+        if (parsed && parsed.month === targetMonth && parsed.year === targetYear) {
+          return true;
+        }
+      }
+      
+      if (c.dataretirada_date) {
+        const d = new Date(c.dataretirada_date);
+        if (!isNaN(d.getTime())) {
+          return d.getUTCMonth() === targetMonth && d.getUTCFullYear() === targetYear;
+        }
+      }
+      
+      return false;
+    });
+  }, [consorciosList, selectedGrupoId, targetMonth, targetYear]);
+
+  const parcelasDoClienteContemplado = useMemo(() => {
+    if (!clienteRetiradaMesObj) return [];
+    return grupoPagamentos.filter((p) => p.consorcio_id === clienteRetiradaMesObj.id);
+  }, [grupoPagamentos, clienteRetiradaMesObj]);
+
+  const clienteContempladoStatus = useMemo(() => {
+    if (!clienteRetiradaMesObj) return null;
+    if (parcelasDoClienteContemplado.length === 0) return 'em_dia';
+    
+    const hoje = new Date().setHours(0, 0, 0, 0);
+    const temAtrasada = parcelasDoClienteContemplado.some((p) => {
+      const isPaid = !!p.datapagamento_date;
+      const vencimento = p.data_vencimento ? new Date(p.data_vencimento).getTime() : null;
+      return !isPaid && vencimento && vencimento < hoje;
+    });
+    
+    return temAtrasada ? 'atraso' : 'em_dia';
+  }, [parcelasDoClienteContemplado, clienteRetiradaMesObj]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 15 }}
@@ -753,107 +892,226 @@ const ConsorciosTab: React.FC = () => {
           </p>
         </div>
 
-        {/* Filtro de Mês e Ano */}
-        <div className="relative inline-block">
-          <button
-            onClick={() => setShowFilterCalendarPopover(!showFilterCalendarPopover)}
-            className={`flex items-center gap-2.5 px-4 py-2 text-xs font-semibold rounded-full border ${A.border} ${A.card} ${A.bgHover} ${A.textPrimary} transition-all shadow-sm cursor-pointer`}
-          >
-            <Calendar size={14} className="text-[#64748B] flex-shrink-0" />
-            <span className={A.textPrimary}>
-              {isFilterActive ? (
-                <>
-                  <span className="text-brand-purple font-bold">
-                    {`01 - ${new Date(filterYear, filterMonth + 1, 0).getDate()} `}
-                  </span>
-                  {`${['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][filterMonth]} ${filterYear}`}
-                </>
-              ) : (
-                'Todos os Períodos'
-              )}
-            </span>
-            <svg
-              className={`w-4 h-4 ml-1 text-slate-400 transition-transform ${showFilterCalendarPopover ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        {/* Contêiner de Filtros */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro de Cliente */}
+          <div className="relative inline-block">
+            <button
+              onClick={() => {
+                setShowClientFilterPopover(!showClientFilterPopover);
+                setShowFilterCalendarPopover(false);
+              }}
+              className={`flex items-center gap-2.5 px-4 py-2 text-xs font-semibold rounded-full border ${A.border} ${A.card} ${A.bgHover} ${A.textPrimary} transition-all shadow-sm cursor-pointer`}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {showFilterCalendarPopover && (
-            <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowFilterCalendarPopover(false)} />
-          )}
-
-          {showFilterCalendarPopover && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className={`absolute right-0 mt-2 w-72 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-4`}
-            >
-              {/* Seleção de Ano */}
-              <div className="flex items-center justify-between border-b border-dashed pb-2 border-slate-200 dark:border-slate-700/50">
-                <button
-                  type="button"
-                  onClick={() => setFilterYear((y) => y - 1)}
-                  className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span className={`font-bold text-sm ${A.textPrimary}`}>{filterYear}</span>
-                <button
-                  type="button"
-                  onClick={() => setFilterYear((y) => y + 1)}
-                  className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-
-              {/* Grade de Meses */}
-              <div className="grid grid-cols-3 gap-1.5">
-                {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName, mIdx) => {
-                  const isSelected = isFilterActive && filterMonth === mIdx;
-                  return (
-                    <button
-                      key={mName}
-                      type="button"
-                      onClick={() => {
-                        setFilterMonth(mIdx);
-                        setIsFilterActive(true);
-                        setShowFilterCalendarPopover(false);
-                      }}
-                      className={`py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${isSelected
-                        ? 'bg-brand-purple text-white shadow-md shadow-brand-purple/20'
-                        : `border border-transparent ${A.bgHover} ${A.textPrimary}`
-                        }`}
-                    >
-                      {mName}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Opção Limpar Filtro */}
-              <button
-                type="button"
-                onClick={() => {
-                  setIsFilterActive(false);
-                  setShowFilterCalendarPopover(false);
-                }}
-                className={`w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 transition-all cursor-pointer`}
+              <Filter size={14} className={selectedFilterClienteId ? "text-brand-purple" : "text-[#64748B] flex-shrink-0"} />
+              <span className={A.textPrimary}>
+                {selectedFilterClienteId ? (
+                  <>
+                    Cliente:{' '}
+                    <span className="text-brand-purple font-bold">
+                      {clientesList.find((c) => c.id === selectedFilterClienteId)?.name || 'Selecionado'}
+                    </span>
+                  </>
+                ) : (
+                  'Filtrar por Cliente'
+                )}
+              </span>
+              <svg
+                className={`w-4 h-4 ml-1 text-slate-400 transition-transform ${showClientFilterPopover ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                Todos os Períodos
-              </button>
-            </motion.div>
-          )}
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showClientFilterPopover && (
+              <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowClientFilterPopover(false)} />
+            )}
+
+            {showClientFilterPopover && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className={`absolute right-0 mt-2 w-72 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-3`}
+              >
+                {/* Busca */}
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                    <Search size={12} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
+                    value={clientFilterQuery}
+                    onChange={(e) => setClientFilterQuery(e.target.value)}
+                    className={`w-full pl-8 pr-7 py-1.5 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
+                    autoFocus
+                  />
+                  {clientFilterQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setClientFilterQuery('')}
+                      className="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      <X size={10} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Lista de Clientes */}
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                  {filteredFilterClientes.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                      Nenhum cliente encontrado
+                    </div>
+                  ) : (
+                    filteredFilterClientes.slice(0, 50).map((cli) => {
+                      const isSelected = selectedFilterClienteId === cli.id;
+                      return (
+                        <button
+                          key={cli.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedFilterClienteId(cli.id);
+                            setShowClientFilterPopover(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all ${
+                            isSelected
+                              ? 'bg-brand-purple text-white font-bold'
+                              : `hover:bg-slate-100 dark:hover:bg-slate-800 ${A.textPrimary}`
+                          }`}
+                        >
+                          {cli.name}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Limpar Filtro */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFilterClienteId(null);
+                    setClientFilterQuery('');
+                    setShowClientFilterPopover(false);
+                  }}
+                  className={`w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] dark:hover:text-slate-200 transition-all cursor-pointer`}
+                >
+                  Todos os Clientes
+                </button>
+              </motion.div>
+            )}
+          </div>
+
+          {/* Filtro de Mês e Ano */}
+          <div className="relative inline-block">
+            <button
+              onClick={() => {
+                setShowFilterCalendarPopover(!showFilterCalendarPopover);
+                setShowClientFilterPopover(false);
+              }}
+              className={`flex items-center gap-2.5 px-4 py-2 text-xs font-semibold rounded-full border ${A.border} ${A.card} ${A.bgHover} ${A.textPrimary} transition-all shadow-sm cursor-pointer`}
+            >
+              <Calendar size={14} className="text-[#64748B] flex-shrink-0" />
+              <span className={A.textPrimary}>
+                {isFilterActive ? (
+                  <>
+                    <span className="text-brand-purple font-bold">
+                      {`01 - ${new Date(filterYear, filterMonth + 1, 0).getDate()} `}
+                    </span>
+                    {`${['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][filterMonth]} ${filterYear}`}
+                  </>
+                ) : (
+                  'Todos os Períodos'
+                )}
+              </span>
+              <svg
+                className={`w-4 h-4 ml-1 text-slate-400 transition-transform ${showFilterCalendarPopover ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showFilterCalendarPopover && (
+              <div className="fixed inset-0 z-40 cursor-default" onClick={() => setShowFilterCalendarPopover(false)} />
+            )}
+
+            {showFilterCalendarPopover && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className={`absolute right-0 mt-2 w-72 p-4 rounded-[20px] border ${A.border} ${A.card} shadow-xl z-50 text-left space-y-4`}
+              >
+                {/* Seleção de Ano */}
+                <div className="flex items-center justify-between border-b border-dashed pb-2 border-slate-200 dark:border-slate-700/50">
+                  <button
+                    type="button"
+                    onClick={() => setFilterYear((y) => y - 1)}
+                    className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span className={`font-bold text-sm ${A.textPrimary}`}>{filterYear}</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterYear((y) => y + 1)}
+                    className={`p-1.5 rounded-lg ${A.bgHover} ${A.textPrimary} transition-all`}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+
+                {/* Grade de Meses */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName, mIdx) => {
+                    const isSelected = isFilterActive && filterMonth === mIdx;
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        onClick={() => {
+                          setFilterMonth(mIdx);
+                          setIsFilterActive(true);
+                          setShowFilterCalendarPopover(false);
+                        }}
+                        className={`py-2 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer ${isSelected
+                          ? 'bg-brand-purple text-white shadow-md shadow-brand-purple/20'
+                          : `border border-transparent ${A.bgHover} ${A.textPrimary}`
+                          }`}
+                      >
+                        {mName}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Opção Limpar Filtro */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsFilterActive(false);
+                    setShowFilterCalendarPopover(false);
+                  }}
+                  className={`w-full py-2 text-center text-xs font-bold rounded-xl border border-dashed ${A.border} text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50 transition-all cursor-pointer`}
+                >
+                  Todos os Períodos
+                </button>
+              </motion.div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Cards de Estatísticas Gerais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 select-none">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 select-none">
         {/* Card 1: Total Aberto (Ativos) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
@@ -976,6 +1234,55 @@ const ConsorciosTab: React.FC = () => {
             </span>
           </div>
           <CircleCheck size={72} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
+        </motion.div>
+
+        {/* Card 5: Retirada do Mês */}
+        <motion.div
+          whileHover={{ y: -3, scale: 1.01 }}
+          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          style={{ backgroundColor: '#EFE0F8' }}
+        >
+          <div className="flex justify-between items-start z-10 gap-1">
+            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+              Retirada do Mês
+            </span>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-[#7C3AED]">
+              <ArrowUpRight size={16} />
+            </div>
+          </div>
+          <div className="my-2 z-10 space-y-1">
+            {clienteRetiradaMesObj ? (
+              <>
+                <span style={{ fontSize: '16pt' }} className="font-extrabold text-purple-955 block line-clamp-1 leading-tight">
+                  {clienteRetiradaMesObj.clientes?.nome}
+                </span>
+                <div className="flex items-center">
+                  {clienteContempladoStatus === 'atraso' ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                      Em Atraso
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Em Dia
+                    </span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <span className="text-sm font-medium text-purple-900/50 block italic">
+                Nenhuma retirada
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C3AED] z-10 truncate">
+            <Calendar size={14} className="flex-shrink-0" />
+            <span className="truncate">
+              {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][targetMonth]} de {targetYear}
+            </span>
+          </div>
+          <ArrowUpRight size={72} className="absolute -right-3 -bottom-3 text-purple-500/5 pointer-events-none z-0" />
         </motion.div>
       </div>
 
