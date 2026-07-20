@@ -1244,7 +1244,7 @@ const ConsorciosTab: React.FC = () => {
         >
           <div className="flex justify-between items-start z-10 gap-1">
             <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
-              Retirada do Mês
+              RETIRADA DO MÊS ({['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'][targetMonth]}/{String(targetYear).substring(2)})
             </span>
             <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-[#7C3AED]">
               <ArrowUpRight size={16} />
@@ -1256,7 +1256,8 @@ const ConsorciosTab: React.FC = () => {
                 <span style={{ fontSize: '16pt' }} className="font-extrabold text-purple-955 block line-clamp-1 leading-tight">
                   {clienteRetiradaMesObj.clientes?.nome}
                 </span>
-                <div className="flex flex-col gap-1 mt-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-xs">
+                  {/* Status de Pagamento */}
                   <div className="flex items-center">
                     {clienteContempladoStatus === 'atraso' ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
@@ -1270,12 +1271,16 @@ const ConsorciosTab: React.FC = () => {
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] font-bold text-purple-900/60">
+                  
+                  <span className="text-purple-300 dark:text-purple-700 font-bold text-[11px]">•</span>
+                  
+                  {/* Data de Retirada */}
+                  <span className="text-[11px] font-bold text-purple-900/60">
                     Retirada:{' '}
                     <span className="text-brand-purple font-extrabold">
                       {formatRetiradaDate(clienteRetiradaMesObj.dataretirada_date)}
                     </span>
-                  </p>
+                  </span>
                 </div>
               </>
             ) : (
@@ -1284,12 +1289,14 @@ const ConsorciosTab: React.FC = () => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C3AED] z-10 truncate">
-            <Calendar size={14} className="flex-shrink-0" />
-            <span className="truncate">
-              {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][targetMonth]} de {targetYear}
-            </span>
-          </div>
+          {!clienteRetiradaMesObj && (
+            <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C3AED] z-10 truncate">
+              <Calendar size={14} className="flex-shrink-0" />
+              <span className="truncate">
+                {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][targetMonth]} de {targetYear}
+              </span>
+            </div>
+          )}
           <ArrowUpRight size={72} className="absolute -right-3 -bottom-3 text-purple-500/5 pointer-events-none z-0" />
         </motion.div>
       </div>
