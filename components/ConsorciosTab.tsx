@@ -537,10 +537,10 @@ const ConsorciosTab: React.FC = () => {
     setShowRetiradaMonthPopover(false);
     setRetiradaYear(new Date().getFullYear());
 
-    // Calcular próxima cota da sequência
-    const existingCotaNumbers = filteredConsorciosList
+    // Calcular próxima cota da sequência global de consórcios
+    const existingCotaNumbers = consorciosList
       .map((c) => c.cotano_number)
-      .filter((n): n is number => n !== undefined && n !== null);
+      .filter((n): n is number => typeof n === 'number' && !isNaN(n));
     const maxCota = existingCotaNumbers.length > 0 ? Math.max(...existingCotaNumbers) : 0;
     setNewCotaNo(String(maxCota + 1));
 

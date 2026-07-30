@@ -7,6 +7,7 @@ import DashboardTab from './components/DashboardTab';
 import ClientesTab from './components/ClientesTab';
 import GruposTab from './components/GruposTab';
 import ConsorciosTab from './components/ConsorciosTab';
+import SorteioTab from './components/SorteioTab';
 import ConfiguracoesTab from './components/ConfiguracoesTab';
 import CrediariosTab from './components/CrediariosTab';
 import HistoricosTab from './components/HistoricosTab';
@@ -88,6 +89,7 @@ const App: React.FC = () => {
           <Route path="clientes" element={<ClientesTab />} />
           <Route path="grupos" element={<GruposTab />} />
           <Route path="consorcios" element={<ConsorciosTab />} />
+          <Route path="sorteio" element={<SorteioTab />} />
           <Route path="crediarios" element={<CrediariosTab />} />
           <Route path="historicos" element={<HistoricosTab />} />
           <Route path="notificacoes" element={<NotificacoesTab />} />

@@ -28,6 +28,7 @@ import {
   Check,
   RefreshCw,
   Gift,
+  Trophy,
   X
 } from 'lucide-react';
 
@@ -364,6 +365,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     clientes: '/clientes',
     grupos: '/grupos',
     consorcios: '/consorcios',
+    sorteio: '/sorteio',
     crediarios: '/crediarios',
     historico: '/historicos',
     configuracoes: '/configuracoes'
@@ -374,6 +376,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     { id: 'clientes', label: 'Clientes', icon: Users },
     { id: 'grupos', label: 'Grupos', icon: FolderHeart },
     { id: 'consorcios', label: 'Consórcios', icon: DollarSign },
+    { id: 'sorteio', label: 'Sorteio', icon: Trophy },
     { id: 'crediarios', label: 'Crediários', icon: CreditCard },
     { id: 'historico', label: 'Históricos', icon: History }
   ];

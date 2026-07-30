@@ -18,7 +18,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ExternalLink
+  ExternalLink,
+  Trophy,
+  Medal,
+  Award,
+  Crown,
+  DollarSign,
+  BarChart3
 } from 'lucide-react';
 
 const DashboardTab: React.FC = () => {
@@ -37,6 +43,16 @@ const DashboardTab: React.FC = () => {
     paid: number;
     pending: number;
   }[]>([]);
+
+  // Estados para o Ranking dos Top 10 Clientes
+  const [rankingMetric, setRankingMetric] = useState<'pago' | 'contratado'>('pago');
+  const [rankingPeriod, setRankingPeriod] = useState<'geral' | 'ano' | 'mes'>('geral');
+  const [hoveredRankingIndex, setHoveredRankingIndex] = useState<number | null>(null);
+
+  // Estados para o Gráfico Comparativo Mensal (Pagos vs Não Pagos)
+  const [comparativeChartYear, setComparativeChartYear] = useState<number>(new Date().getFullYear());
+  const [hoveredComparativeBar, setHoveredComparativeBar] = useState<{ monthIdx: number; category: 'pagos' | 'naoPagos' } | null>(null);
+  const [comparativeTooltipPos, setComparativeTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
   // Estado para controle de retiradas
   const [selectedWithdrawalMonthYear, setSelectedWithdrawalMonthYear] = useState<string>(() => {
@@ -179,29 +195,49 @@ const DashboardTab: React.FC = () => {
     };
   };
 
+  // Helper de paginação para buscar TODOS os registros do Supabase sem limite de 1.000 linhas por requisição
+  const fetchAllSupabasePages = async (queryFn: (from: number, to: number) => any) => {
+    let allData: any[] = [];
+    let from = 0;
+    const step = 1000;
+    let hasMore = true;
+
+    while (hasMore) {
+      const to = from + step - 1;
+      const { data, error } = await queryFn(from, to);
+      if (error) throw error;
+      if (data && data.length > 0) {
+        allData = [...allData, ...data];
+        if (data.length < step) {
+          hasMore = false;
+        } else {
+          from += step;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
+    return allData;
+  };
+
   const fetchChartData = async (year: number) => {
     setLoadingChart(true);
     try {
-      const startDate = `${year}-01-01T00:00:00Z`;
-      const endDate = `${year}-12-31T23:59:59Z`;
+      // 1. Fetch consorcios payments com paginação automática
+      const consData = await fetchAllSupabasePages((from, to) =>
+        supabase
+          .from('consorcios_pagamentos')
+          .select('consorcio_id, datapagamento_date, valorpago_number, valor_parcela, data_vencimento')
+          .range(from, to)
+      );
 
-      // 1. Fetch consorcios payments
-      const { data: consData, error: consErr } = await supabase
-        .from('consorcios_pagamentos')
-        .select('datapagamento_date, valorpago_number')
-        .not('datapagamento_date', 'is', null)
-        .gte('datapagamento_date', startDate)
-        .lte('datapagamento_date', endDate);
-
-      if (consErr) throw consErr;
-
-      // 2. Fetch crediarios payments
-      const { data: credData, error: credErr } = await supabase
-        .from('crediarios')
-        .select('data_pagamento, data_vencimento, valor_pago, valor_pagar, historico (id, descricao)')
-        .or(`and(data_pagamento.gte.${startDate},data_pagamento.lte.${endDate}),and(data_vencimento.gte.${startDate},data_vencimento.lte.${endDate})`);
-
-      if (credErr) throw credErr;
+      // 2. Fetch crediarios payments com paginação automática
+      const credData = await fetchAllSupabasePages((from, to) =>
+        supabase
+          .from('crediarios')
+          .select('id, data_pagamento, data_vencimento, data_compra, valor_pago, valor_pagar, crediario_cliente_id, crediarios_clientes (cliente_id, clientes (id, nome, celular)), historico (id, descricao)')
+          .range(from, to)
+      );
 
       setChartData({
         consorcios: consData || [],
@@ -212,6 +248,220 @@ const DashboardTab: React.FC = () => {
     } finally {
       setLoadingChart(false);
     }
+  };
+
+  // Cálculo do Ranking dos Top 10 Clientes (Soma Crediário + Consórcio)
+  const top10Clientes = useMemo(() => {
+    if (!ctx.clientesList || ctx.clientesList.length === 0) return [];
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    // Mapeamento dos consórcios para encontrar cliente_id por consorcio_id
+    const consorcioToClienteMap: { [consorcioId: string]: { clienteId: string; clienteNome: string; clienteCelular?: string } } = {};
+    ctx.consorciosList.forEach((c) => {
+      if (c.id && c.cliente_id) {
+        consorcioToClienteMap[c.id] = {
+          clienteId: c.cliente_id,
+          clienteNome: c.clientes?.nome || 'Cliente Desconhecido',
+          clienteCelular: c.clientes?.celular || ''
+        };
+      }
+    });
+
+    const accumulator: {
+      [clienteId: string]: {
+        clienteId: string;
+        nome: string;
+        celular?: string;
+        totalCrediario: number;
+        totalConsorcio: number;
+      };
+    } = {};
+
+    const initClient = (id: string, name: string, phone?: string) => {
+      if (!accumulator[id]) {
+        accumulator[id] = {
+          clienteId: id,
+          nome: name,
+          celular: phone || '',
+          totalCrediario: 0,
+          totalConsorcio: 0
+        };
+      }
+    };
+
+    ctx.clientesList.forEach((c) => {
+      if (c.id) {
+        initClient(c.id, c.name || 'Cliente', c.phone);
+      }
+    });
+
+    // 1. Somar Consórcios
+    chartData.consorcios.forEach((p) => {
+      if (!p.consorcio_id) return;
+      const clientInfo = consorcioToClienteMap[p.consorcio_id];
+      if (!clientInfo) return;
+
+      const dateStr = p.datapagamento_date || p.data_vencimento;
+      if (dateStr) {
+        const parts = parseDateParts(dateStr);
+        if (parts) {
+          if (rankingPeriod === 'ano' && parts.year !== chartYear) return;
+          if (rankingPeriod === 'mes' && (parts.year !== currentYear || parts.month !== currentMonth)) return;
+        }
+      }
+
+      let val = 0;
+      if (rankingMetric === 'pago') {
+        if (p.datapagamento_date || Number(p.valorpago_number || 0) > 0) {
+          val = Number(p.valorpago_number || 0);
+        }
+      } else {
+        val = Number(p.valor_parcela || p.valorpago_number || 0);
+      }
+
+      if (val > 0) {
+        initClient(clientInfo.clienteId, clientInfo.clienteNome, clientInfo.clienteCelular);
+        accumulator[clientInfo.clienteId].totalConsorcio += val;
+      }
+    });
+
+    // 2. Somar Crediários
+    chartData.crediarios.forEach((c) => {
+      const clienteId = c.crediarios_clientes?.cliente_id || c.crediario_cliente_id;
+      const clienteNome = c.crediarios_clientes?.clientes?.nome;
+      const clienteCelular = c.crediarios_clientes?.clientes?.celular;
+
+      if (!clienteId) return;
+
+      const dateStr = c.data_pagamento || c.data_vencimento || c.data_compra;
+      if (dateStr) {
+        const parts = parseDateParts(dateStr);
+        if (parts) {
+          if (rankingPeriod === 'ano' && parts.year !== chartYear) return;
+          if (rankingPeriod === 'mes' && (parts.year !== currentYear || parts.month !== currentMonth)) return;
+        }
+      }
+
+      let val = 0;
+      if (rankingMetric === 'pago') {
+        if (c.data_pagamento || Number(c.valor_pago || 0) > 0) {
+          val = Number(c.valor_pago || 0);
+        }
+      } else {
+        val = Number(c.valor_pagar || c.valor_pago || 0);
+      }
+
+      if (val > 0) {
+        initClient(clienteId, clienteNome || 'Cliente Desconhecido', clienteCelular);
+        accumulator[clienteId].totalCrediario += val;
+      }
+    });
+
+    return Object.values(accumulator)
+      .map((cli) => ({
+        ...cli,
+        totalGeral: cli.totalCrediario + cli.totalConsorcio
+      }))
+      .filter((cli) => cli.totalGeral > 0)
+      .sort((a, b) => b.totalGeral - a.totalGeral)
+      .slice(0, 10);
+  }, [ctx.clientesList, ctx.consorciosList, chartData, rankingMetric, rankingPeriod, chartYear]);
+
+  // Cálculo do Gráfico Comparativo Mensal (Consórcios + Crediários: Pagos vs Não Pagos)
+  const monthlyComparativeData = useMemo(() => {
+    const monthsShort = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    
+    const monthly = Array.from({ length: 12 }, (_, i) => ({
+      name: monthsShort[i],
+      monthIdx: i,
+      pagosConsorcio: 0,
+      pagosCrediario: 0,
+      totalPagos: 0,
+      naoPagosConsorcio: 0,
+      naoPagosCrediario: 0,
+      totalNaoPagos: 0
+    }));
+
+    // 1. Processar Consórcios
+    chartData.consorcios.forEach((p) => {
+      // Se pago
+      if (p.datapagamento_date) {
+        const parts = parseDateParts(p.datapagamento_date);
+        if (parts && parts.year === comparativeChartYear) {
+          const val = Number(p.valorpago_number || 0);
+          monthly[parts.month].pagosConsorcio += val;
+          monthly[parts.month].totalPagos += val;
+        }
+      } else {
+        // Se pendente / não pago
+        const dateStr = p.data_vencimento;
+        if (dateStr) {
+          const parts = parseDateParts(dateStr);
+          if (parts && parts.year === comparativeChartYear) {
+            const val = Number(p.valor_parcela || 0);
+            monthly[parts.month].naoPagosConsorcio += val;
+            monthly[parts.month].totalNaoPagos += val;
+          }
+        }
+      }
+    });
+
+    // 2. Processar Crediários
+    chartData.crediarios.forEach((c) => {
+      // Valor pago
+      if (c.data_pagamento || Number(c.valor_pago || 0) > 0) {
+        const dateStr = c.data_pagamento || c.data_vencimento;
+        if (dateStr) {
+          const parts = parseDateParts(dateStr);
+          if (parts && parts.year === comparativeChartYear) {
+            const val = Number(c.valor_pago || 0);
+            monthly[parts.month].pagosCrediario += val;
+            monthly[parts.month].totalPagos += val;
+          }
+        }
+      }
+
+      // Valor não pago / em aberto
+      const valorPagar = Number(c.valor_pagar || 0);
+      const valorPago = Number(c.valor_pago || 0);
+      const emAberto = Math.max(0, valorPagar - valorPago);
+
+      if (!c.data_pagamento && emAberto > 0) {
+        const dateStr = c.data_vencimento || c.data_compra;
+        if (dateStr) {
+          const parts = parseDateParts(dateStr);
+          if (parts && parts.year === comparativeChartYear) {
+            monthly[parts.month].naoPagosCrediario += emAberto;
+            monthly[parts.month].totalNaoPagos += emAberto;
+          }
+        }
+      }
+    });
+
+    return monthly;
+  }, [chartData, comparativeChartYear]);
+
+  const maxComparativeVal = useMemo(() => {
+    let max = 0;
+    monthlyComparativeData.forEach(d => {
+      if (d.totalPagos > max) max = d.totalPagos;
+      if (d.totalNaoPagos > max) max = d.totalNaoPagos;
+    });
+    return max === 0 ? 1000 : max;
+  }, [monthlyComparativeData]);
+
+  const formatCompactK = (val: number) => {
+    if (!val || val <= 0) return '';
+    if (val >= 1000000) {
+      return `${(val / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    }
+    if (val >= 1000) {
+      return `${(val / 1000).toFixed(0)}K`;
+    }
+    return String(Math.round(val));
   };
 
   const processGroupCompData = (data: any[], filterMonthIndex: number | null, filterYearVal: number | null) => {
@@ -311,10 +561,12 @@ const DashboardTab: React.FC = () => {
   const fetchGroupComparison = async () => {
     if (!selectedGroupMonthYear) {
       try {
-        const { data, error } = await supabase
-          .from('consorcios_pagamentos')
-          .select('datapagamento_date, valorpago_number, valor_parcela, grupo_text, grupo_id, data_vencimento');
-        if (error) throw error;
+        const data = await fetchAllSupabasePages((from, to) =>
+          supabase
+            .from('consorcios_pagamentos')
+            .select('datapagamento_date, valorpago_number, valor_parcela, grupo_text, grupo_id, data_vencimento')
+            .range(from, to)
+        );
         processGroupCompData(data || [], null, null);
       } catch (err) {
         console.error('Erro ao buscar comparativo geral de grupos:', err);
@@ -331,11 +583,13 @@ const DashboardTab: React.FC = () => {
     const endDate = new Date(Date.UTC(yearVal, mIndex + 1, 0, 23, 59, 59, 999)).toISOString();
 
     try {
-      const { data, error } = await supabase
-        .from('consorcios_pagamentos')
-        .select('datapagamento_date, valorpago_number, valor_parcela, grupo_text, grupo_id, data_vencimento')
-        .or(`and(datapagamento_date.gte.${startDate},datapagamento_date.lte.${endDate}),and(data_vencimento.gte.${startDate},data_vencimento.lte.${endDate})`);
-      if (error) throw error;
+      const data = await fetchAllSupabasePages((from, to) =>
+        supabase
+          .from('consorcios_pagamentos')
+          .select('datapagamento_date, valorpago_number, valor_parcela, grupo_text, grupo_id, data_vencimento')
+          .or(`and(datapagamento_date.gte.${startDate},datapagamento_date.lte.${endDate}),and(data_vencimento.gte.${startDate},data_vencimento.lte.${endDate})`)
+          .range(from, to)
+      );
       processGroupCompData(data || [], mIndex, yearVal);
     } catch (err) {
       console.error('Erro ao buscar comparativo de grupos:', err);
@@ -380,7 +634,7 @@ const DashboardTab: React.FC = () => {
       const { year, month, day } = parts;
 
       if (year === chartYear) {
-        const val = Number(pay.valorpago_number || 0);
+        const val = Number(pay.valorpago_number || pay.valor_parcela || 0);
         monthly[month].consorcios += val;
         monthly[month].total += val;
 
@@ -399,16 +653,16 @@ const DashboardTab: React.FC = () => {
 
       if (year === chartYear) {
         const val = Number(c.valor_pago || 0);
-        const desc = c.historico?.descricao || '';
+        const descUpper = (c.historico?.descricao || '').toUpperCase();
 
-        if (desc === '# DO CONSORCIO') {
+        if (descUpper.includes('CONSORCIO') || descUpper.includes('CONSÓRCIO')) {
           monthly[month].crediariosConsorcio += val;
           monthly[month].total += val;
           if (month === currentMonthIndex && day >= 1 && day <= daysInMonth) {
             daily[day - 1].crediariosConsorcio += val;
             daily[day - 1].total += val;
           }
-        } else if (desc === 'COMPRAS') {
+        } else {
           monthly[month].crediariosCompras += val;
           monthly[month].total += val;
           if (month === currentMonthIndex && day >= 1 && day <= daysInMonth) {
@@ -626,8 +880,10 @@ const DashboardTab: React.FC = () => {
       if (!groups[desc]) {
         groups[desc] = { historico: desc, recebido: 0, aReceber: 0 };
       }
-      groups[desc].recebido += Number(c.valor_pago || 0);
-      groups[desc].aReceber += Number(c.valor_pagar || 0);
+      const p = Number(c.valor_pago || 0);
+      const a = Math.max(Number(c.valor_pagar || 0), p);
+      groups[desc].recebido += p;
+      groups[desc].aReceber += a;
     });
 
     return Object.values(groups);
@@ -1329,6 +1585,7 @@ const DashboardTab: React.FC = () => {
         </div>
       </div>
 
+      {/* SEÇÃO 2: GRUPOS DE CONSÓRCIOS + CREDIÁRIOS (Abaixo de Entradas por Período) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className={`md:col-span-2 border ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[480px]`}>
           <div className="space-y-4 flex-1 flex flex-col justify-between">
@@ -1893,6 +2150,555 @@ const DashboardTab: React.FC = () => {
                 );
               })
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* SEÇÃO LADO A LADO: TOP 10 CLIENTES + GRÁFICO COMPARATIVO MENSAL */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* SEÇÃO RANKING TOP 10 CLIENTES (Crediário + Consórcio) */}
+        <div className={`lg:col-span-6 border ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between transition-all duration-300 relative overflow-hidden`}>
+          {/* Header do Card */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className={`font-black text-xl tracking-tight ${A.textPrimary}`}>
+                  Top 10 Clientes
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-extrabold text-[11px] border border-amber-500/20 uppercase tracking-wider">
+                  Crediário + Consórcio
+                </span>
+              </div>
+              <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                Ranking dos melhores clientes acumulados.
+              </p>
+            </div>
+
+            {/* Filtros e Alternância de Métrica */}
+            <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto text-xs font-semibold">
+              {/* Seletor de Período */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                <button
+                  onClick={() => setRankingPeriod('geral')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold ${
+                    rankingPeriod === 'geral'
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Geral
+                </button>
+                <button
+                  onClick={() => setRankingPeriod('ano')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold ${
+                    rankingPeriod === 'ano'
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Ano ({chartYear})
+                </button>
+                <button
+                  onClick={() => setRankingPeriod('mes')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold ${
+                    rankingPeriod === 'mes'
+                      ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Mês Atual
+                </button>
+              </div>
+
+              {/* Alternância de Métrica: Pago vs Contratado */}
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
+                <button
+                  onClick={() => setRankingMetric('pago')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 ${
+                    rankingMetric === 'pago'
+                      ? 'bg-[#7C3AED] text-white shadow-md shadow-brand-purple/20'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Total efetivamente pago em Crediários + Consórcios"
+                >
+                  <Check size={12} />
+                  <span>Total Pago</span>
+                </button>
+                <button
+                  onClick={() => setRankingMetric('contratado')}
+                  className={`px-3 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 ${
+                    rankingMetric === 'contratado'
+                      ? 'bg-[#7C3AED] text-white shadow-md shadow-brand-purple/20'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                  title="Total contratado (soma de compras e cotas)"
+                >
+                  <DollarSign size={12} />
+                  <span>Total Compras</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Legenda do Gráfico de Ranking */}
+          <div className="flex items-center justify-between pt-4 pb-2 text-xs font-semibold px-1">
+            <div className="flex items-center gap-4 text-xs">
+              <span className="text-slate-400 font-bold uppercase tracking-wider">Volume:</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 inline-block" />
+                <span className={A.textPrimary}>Crediário</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-400 to-cyan-500 inline-block" />
+                <span className={A.textPrimary}>Consórcio</span>
+              </div>
+            </div>
+
+            <span className="text-[11px] text-slate-400 font-bold hidden sm:inline">
+              Top {top10Clientes.length}
+            </span>
+          </div>
+
+          {/* Lista de Ranking */}
+          <div className="space-y-3.5 mt-2">
+            {top10Clientes.length === 0 ? (
+              <div className="py-12 text-center space-y-2">
+                <Trophy size={36} className="mx-auto text-slate-300 dark:text-slate-600 opacity-40 animate-pulse" />
+                <p className={`text-sm font-bold ${A.textPrimary}`}>Nenhum cliente registrado neste período</p>
+                <p className={`text-xs ${A.textMuted}`}>Alterne os filtros para visualizar o ranking de outros períodos.</p>
+              </div>
+            ) : (
+              (() => {
+                const maxTotal = top10Clientes[0]?.totalGeral || 1;
+                const sumTop10 = top10Clientes.reduce((acc, c) => acc + c.totalGeral, 0);
+
+                return top10Clientes.map((item, idx) => {
+                  const rank = idx + 1;
+                  const pctOfMax = (item.totalGeral / maxTotal) * 100;
+                  const pctOfTop10 = sumTop10 > 0 ? ((item.totalGeral / sumTop10) * 100).toFixed(1) : '0';
+                  
+                  const pctCrediario = item.totalGeral > 0 ? (item.totalCrediario / item.totalGeral) * 100 : 0;
+                  const pctConsorcio = item.totalGeral > 0 ? (item.totalConsorcio / item.totalGeral) * 100 : 0;
+
+                  // Estilos por posição no pódio
+                  const isTop1 = rank === 1;
+                  const isTop2 = rank === 2;
+                  const isTop3 = rank === 3;
+
+                  return (
+                    <motion.div
+                      key={item.clienteId}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: idx * 0.04 }}
+                      onMouseEnter={() => setHoveredRankingIndex(idx)}
+                      onMouseLeave={() => setHoveredRankingIndex(null)}
+                      className={`relative p-3 rounded-2xl border transition-all duration-200 ${
+                        isTop1
+                          ? 'bg-gradient-to-r from-amber-500/5 via-purple-500/5 to-transparent border-amber-500/30 shadow-md shadow-amber-500/5'
+                          : isTop2
+                          ? 'bg-slate-50/50 dark:bg-slate-900/30 border-slate-300/50 dark:border-slate-700/60'
+                          : isTop3
+                          ? 'bg-amber-900/5 dark:bg-amber-950/10 border-amber-700/20'
+                          : `border-transparent hover:bg-slate-50/60 dark:hover:bg-slate-800/30`
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">
+                        {/* Posição + Avatar + Nome */}
+                        <div className="flex items-center gap-2.5 min-w-[200px] max-w-[260px]">
+                          {/* Posição / Badge do Pódio */}
+                          <div className="flex items-center justify-center w-7 h-7 flex-shrink-0">
+                            {isTop1 ? (
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-amber-500/30" title="1º Lugar (Ouro)">
+                                🥇
+                              </div>
+                            ) : isTop2 ? (
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-300 to-slate-400 text-slate-900 flex items-center justify-center font-black text-xs shadow-sm" title="2º Lugar (Prata)">
+                                🥈
+                              </div>
+                            ) : isTop3 ? (
+                              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-700 to-amber-800 text-white flex items-center justify-center font-black text-xs shadow-sm" title="3º Lugar (Bronze)">
+                                🥉
+                              </div>
+                            ) : (
+                              <span className="font-black text-xs text-slate-400 dark:text-slate-500">
+                                #{rank}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Avatar */}
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 shadow-sm ${
+                            isTop1
+                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-2 border-amber-400'
+                              : isTop2
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-2 border-slate-300 dark:border-slate-600'
+                              : isTop3
+                              ? 'bg-amber-900/10 text-amber-700 dark:text-amber-400 border-2 border-amber-700/50'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'
+                          }`}>
+                            {item.nome.charAt(0).toUpperCase()}
+                          </div>
+
+                          {/* Nome do Cliente e Sub-linha */}
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-bold text-xs truncate leading-tight ${A.textPrimary}`} title={item.nome}>
+                              {item.nome}
+                            </p>
+                            <p className={`text-[9px] ${A.textMuted} mt-0.5 flex items-center gap-1`}>
+                              <span>{pctOfTop10}%</span>
+                              {item.celular && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-700">•</span>
+                                  <a
+                                    href={getWhatsAppLink(item.celular)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-emerald-500 hover:text-emerald-600 font-bold flex items-center gap-0.5"
+                                    title="Abrir WhatsApp"
+                                  >
+                                    <Phone size={9} />
+                                    <span>Whats</span>
+                                  </a>
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Barra de Progresso Empilhada (Crediário + Consórcio) */}
+                        <div className="flex-1 space-y-1">
+                          <div className="h-3 bg-slate-100 dark:bg-slate-800/80 rounded-full overflow-hidden flex p-0.5 border border-slate-200/40 dark:border-slate-700/40 relative">
+                            {/* Segmento Crediário */}
+                            {item.totalCrediario > 0 && (
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(item.totalCrediario / maxTotal) * 100}%` }}
+                                transition={{ duration: 0.8 }}
+                                className="h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-l-full relative group"
+                                title={`Crediário: ${formatCurrency(item.totalCrediario)} (${pctCrediario.toFixed(0)}%)`}
+                              />
+                            )}
+                            {/* Segmento Consórcio */}
+                            {item.totalConsorcio > 0 && (
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(item.totalConsorcio / maxTotal) * 100}%` }}
+                                transition={{ duration: 0.8 }}
+                                className={`h-full bg-gradient-to-r from-cyan-400 to-cyan-500 ${
+                                  item.totalCrediario === 0 ? 'rounded-l-full' : ''
+                                } rounded-r-full relative group`}
+                                title={`Consórcio: ${formatCurrency(item.totalConsorcio)} (${pctConsorcio.toFixed(0)}%)`}
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Valor Total */}
+                        <div className="text-right min-w-[100px] self-end sm:self-center">
+                          <span className={`text-xs font-black tracking-tight ${
+                            isTop1
+                              ? 'text-amber-500 dark:text-amber-400'
+                              : A.textPrimary
+                          }`}>
+                            {formatCurrency(item.totalGeral)}
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                });
+              })()
+            )}
+          </div>
+
+          {/* Rodapé Informativo / Métricas dos Top 10 */}
+          {top10Clientes.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs font-bold">
+              <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 text-[11px]">
+                <span>
+                  Total Top 10:{' '}
+                  <strong className={A.textPrimary}>
+                    {formatCurrency(top10Clientes.reduce((acc, c) => acc + c.totalGeral, 0))}
+                  </strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1 text-amber-500 font-extrabold text-[10px] bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                <Trophy size={11} />
+                <span>#1: {top10Clientes[0].nome}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* SEÇÃO GRÁFICO COMPARATIVO MENSAL (Pagos vs Não Pagos) */}
+        <div className={`lg:col-span-6 border ${A.card} rounded-[24px] p-6 shadow-sm flex flex-col justify-between transition-all duration-300 relative overflow-hidden`}>
+          {/* Header do Card */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
+            <div>
+              <h3 className={`font-black text-xl tracking-tight ${A.textPrimary}`}>
+                Comparativo Mensal
+              </h3>
+              <p className={`text-xs ${A.textMuted} mt-0.5`}>
+                Consórcios + Crediários (Pagos vs Em Aberto)
+              </p>
+            </div>
+
+            {/* Seletor de Ano */}
+            <div className="flex items-center gap-2 self-start sm:self-auto text-xs font-semibold">
+              <select
+                value={comparativeChartYear}
+                onChange={(e) => setComparativeChartYear(Number(e.target.value))}
+                className={`px-3 py-1.5 rounded-xl border ${A.card} ${A.textPrimary} ${A.border} hover:bg-slate-50 dark:hover:bg-slate-800 outline-none cursor-pointer transition-all shadow-sm`}
+              >
+                <option value={2024}>Ano: 2024</option>
+                <option value={2025}>Ano: 2025</option>
+                <option value={2026}>Ano: 2026</option>
+                <option value={2027}>Ano: 2027</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Legenda do Gráfico Comparativo */}
+          <div className="flex flex-wrap items-center justify-between pt-4 pb-2 text-xs font-semibold px-1 gap-2">
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-r from-purple-500 to-purple-600 inline-block" />
+                <span className={A.textPrimary}>Pagos (Consórcio + Crediário)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full bg-gradient-to-r from-cyan-400 to-cyan-500 inline-block" />
+                <span className={A.textPrimary}>Não Pagos / Em Aberto</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Visualização de Colunas Comparativas (Estilo Modelo de Referência) */}
+          <div className="flex-1 relative flex items-end justify-center min-h-[300px] w-full mt-4">
+            <div className="w-full h-full relative flex flex-col justify-between">
+              <div className="flex-1 relative">
+                <svg
+                  className="w-full h-full min-h-[280px]"
+                  viewBox="0 0 720 280"
+                  preserveAspectRatio="none"
+                >
+                  <defs>
+                    <linearGradient id="paidColGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#8B5CF6" />
+                      <stop offset="100%" stopColor="#6D28D9" />
+                    </linearGradient>
+                    <linearGradient id="unpaidColGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="#22D3EE" />
+                      <stop offset="100%" stopColor="#0891B2" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Linhas de Grade discretas no fundo */}
+                  {Array.from({ length: 4 }).map((_, i) => {
+                    const y = 30 + (220 / 3) * i;
+                    return (
+                      <line
+                        key={`comp-grid-${i}`}
+                        x1="10"
+                        y1={y}
+                        x2="710"
+                        y2={y}
+                        stroke="#E2E8F0"
+                        strokeWidth="0.4"
+                        strokeDasharray="4 4"
+                        className="opacity-30"
+                      />
+                    );
+                  })}
+
+                  {/* Desenho das Duas Colunas Comparativas por Mês */}
+                  {monthlyComparativeData.map((item, idx) => {
+                    const monthWidth = 700 / 12;
+                    const groupX = 10 + idx * monthWidth;
+                    const colWidth = (monthWidth - 14) / 2;
+
+                    const hPaid = maxComparativeVal > 0 ? (item.totalPagos / maxComparativeVal) * 220 : 0;
+                    const hUnpaid = maxComparativeVal > 0 ? (item.totalNaoPagos / maxComparativeVal) * 220 : 0;
+
+                    const yPaid = 30 + 220 - hPaid;
+                    const yUnpaid = 30 + 220 - hUnpaid;
+
+                    const xPaid = groupX + 3;
+                    const xUnpaid = xPaid + colWidth + 4;
+
+                    const labelPaid = formatCompactK(item.totalPagos);
+                    const labelUnpaid = formatCompactK(item.totalNaoPagos);
+
+                    return (
+                      <g key={`comp-col-group-${idx}`} className="transition-all duration-300">
+                        {/* Coluna 1: Total Pagos */}
+                        {item.totalPagos > 0 && (
+                          <>
+                            <rect
+                              x={xPaid}
+                              y={yPaid}
+                              width={colWidth}
+                              height={hPaid}
+                              fill="url(#paidColGrad)"
+                              rx="5"
+                              ry="5"
+                              className="cursor-pointer hover:opacity-90 transition-opacity"
+                              onMouseEnter={() => setHoveredComparativeBar({ monthIdx: idx, category: 'pagos' })}
+                              onMouseLeave={() => setHoveredComparativeBar(null)}
+                            />
+                            {/* Rótulo de Valor no Topo da Coluna (Estilo Modelo "38K", "52K") */}
+                            <text
+                              x={xPaid + colWidth / 2}
+                              y={Math.max(20, yPaid - 6)}
+                              textAnchor="middle"
+                              className="fill-slate-700 dark:fill-slate-200 text-[9px] font-black"
+                            >
+                              {labelPaid}
+                            </text>
+                          </>
+                        )}
+
+                        {/* Coluna 2: Total Não Pagos */}
+                        {item.totalNaoPagos > 0 && (
+                          <>
+                            <rect
+                              x={xUnpaid}
+                              y={yUnpaid}
+                              width={colWidth}
+                              height={hUnpaid}
+                              fill="url(#unpaidColGrad)"
+                              rx="5"
+                              ry="5"
+                              className="cursor-pointer hover:opacity-90 transition-opacity"
+                              onMouseEnter={() => setHoveredComparativeBar({ monthIdx: idx, category: 'naoPagos' })}
+                              onMouseLeave={() => setHoveredComparativeBar(null)}
+                            />
+                            {/* Rótulo de Valor no Topo da Coluna */}
+                            <text
+                              x={xUnpaid + colWidth / 2}
+                              y={Math.max(20, yUnpaid - 6)}
+                              textAnchor="middle"
+                              className="fill-slate-700 dark:fill-slate-200 text-[9px] font-black"
+                            >
+                              {labelUnpaid}
+                            </text>
+                          </>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              {/* Rótulos do Eixo X (Mêses) */}
+              <div className="h-6 flex justify-between items-center text-[10px] font-extrabold text-slate-400 pl-[10px] pr-[10px] pt-1">
+                {monthlyComparativeData.map((item, idx) => (
+                  <div
+                    key={`comp-x-label-${idx}`}
+                    style={{ width: `${700 / 12}px` }}
+                    className="text-center"
+                  >
+                    {item.name}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tooltip Customizado do Gráfico Comparativo */}
+            {hoveredComparativeBar !== null && monthlyComparativeData[hoveredComparativeBar.monthIdx] && (() => {
+              const item = monthlyComparativeData[hoveredComparativeBar.monthIdx];
+              
+              const totalMonth = item.totalPagos + item.totalNaoPagos;
+              const pctPaid = totalMonth > 0 ? ((item.totalPagos / totalMonth) * 100).toFixed(0) : '0';
+
+              return (
+                <div
+                  className="absolute z-20 bg-slate-900/95 text-white text-xs p-3.5 rounded-2xl shadow-xl border border-slate-700 pointer-events-none transition-all duration-150 backdrop-blur-sm"
+                  style={{
+                    left: '50%',
+                    top: '40%',
+                    transform: 'translate(-50%, -50%)'
+                  }}
+                >
+                  <p className="font-bold border-b border-slate-700 pb-1 mb-2 text-center text-[11px] uppercase tracking-wider text-slate-300">
+                    Mês: {item.name} / {comparativeChartYear}
+                  </p>
+                  <div className="space-y-1.5 min-w-[210px]">
+                    <div className="flex justify-between items-center gap-4">
+                      <span className="flex items-center gap-1.5 text-purple-400 font-bold">
+                        <span className="w-2.5 h-2.5 rounded-full bg-purple-500 inline-block" />
+                        Total Pagos:
+                      </span>
+                      <span className="font-extrabold text-slate-100">
+                        {formatCurrency(item.totalPagos)}
+                      </span>
+                    </div>
+                    <div className="pl-4 text-[10px] text-slate-400 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Consórcio Pago:</span>
+                        <span className="font-semibold text-slate-300">{formatCurrency(item.pagosConsorcio)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Crediário Pago:</span>
+                        <span className="font-semibold text-slate-300">{formatCurrency(item.pagosCrediario)}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-800 my-1" />
+
+                    <div className="flex justify-between items-center gap-4">
+                      <span className="flex items-center gap-1.5 text-cyan-400 font-bold">
+                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 inline-block" />
+                        Não Pagos (Em Aberto):
+                      </span>
+                      <span className="font-extrabold text-slate-100">
+                        {formatCurrency(item.totalNaoPagos)}
+                      </span>
+                    </div>
+                    <div className="pl-4 text-[10px] text-slate-400 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Consórcio Pendente:</span>
+                        <span className="font-semibold text-slate-300">{formatCurrency(item.naoPagosConsorcio)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Crediário em Aberto:</span>
+                        <span className="font-semibold text-slate-300">{formatCurrency(item.naoPagosCrediario)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center gap-4 border-t border-slate-700/60 pt-1.5 mt-1.5 font-bold text-[12px] text-emerald-400">
+                      <span className="text-white">Taxa de Quitação:</span>
+                      <span>{pctPaid}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Rodapé Informativo / Resumo Anual */}
+          <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs font-bold">
+            <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 text-[11px]">
+              <span>
+                Total Pago no Ano:{' '}
+                <strong className="text-purple-600 dark:text-purple-400 font-extrabold">
+                  {formatCurrency(monthlyComparativeData.reduce((acc, m) => acc + m.totalPagos, 0))}
+                </strong>
+              </span>
+              <span className="text-slate-300 dark:text-slate-700">•</span>
+              <span>
+                Em Aberto:{' '}
+                <strong className="text-cyan-600 dark:text-cyan-400 font-extrabold">
+                  {formatCurrency(monthlyComparativeData.reduce((acc, m) => acc + m.totalNaoPagos, 0))}
+                </strong>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1 text-purple-600 dark:text-purple-300 font-extrabold text-[10px] bg-purple-500/10 px-2.5 py-0.5 rounded-full border border-purple-500/20">
+              <BarChart3 size={11} />
+              <span>Ano {comparativeChartYear}</span>
+            </div>
           </div>
         </div>
       </div>
