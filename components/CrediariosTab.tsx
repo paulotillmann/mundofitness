@@ -25,7 +25,8 @@ import {
   User,
   Phone,
   Trash2,
-  Pencil
+  Pencil,
+  FileText
 } from 'lucide-react';
 
 interface Crediario {
@@ -247,6 +248,12 @@ const CrediariosTab: React.FC = () => {
   const [editSubmitting, setEditSubmitting] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [showAbertoCrediariosModal, setShowAbertoCrediariosModal] = useState<boolean>(false);
+
+  // Estados do Modal de Relatório PDF
+  const [showPdfReportModal, setShowPdfReportModal] = useState<boolean>(false);
+  const [pdfStartDate, setPdfStartDate] = useState<string>('');
+  const [pdfEndDate, setPdfEndDate] = useState<string>('');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<boolean>(false);
 
   const handleOpenBaixaModal = (launch: Crediario) => {
     setSelectedLaunchForBaixa(launch);
@@ -654,6 +661,315 @@ const CrediariosTab: React.FC = () => {
   };
 
 
+  // Geração do Relatório PDF de Inadimplentes
+  const generatePdfReport = () => {
+    if (!pdfStartDate || !pdfEndDate) return;
+    setIsGeneratingPdf(true);
+
+    try {
+      const startDate = new Date(pdfStartDate + 'T00:00:00Z');
+      const endDate = new Date(pdfEndDate + 'T23:59:59Z');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Filtrar crediários: em aberto (sem pagamento), vencidos, e dentro do período de vencimento
+      const overdueItems = crediarios.filter((c) => {
+        const pagar = Number(c.valor_pagar || 0);
+        const pago = Number(c.valor_pago || 0);
+        const isPending = !c.data_pagamento && pagar > pago;
+        if (!isPending) return false;
+
+        if (!c.data_vencimento) return false;
+        const vencDate = new Date(c.data_vencimento);
+        const isOverdue = vencDate.getTime() < today.getTime();
+        if (!isOverdue) return false;
+
+        // Verifica se a data de vencimento está dentro do período selecionado
+        return vencDate >= startDate && vencDate <= endDate;
+      });
+
+      // Agrupar por cliente
+      const grouped: Record<string, {
+        nome: string;
+        celular: string;
+        items: typeof overdueItems;
+        totalPendente: number;
+      }> = {};
+
+      overdueItems.forEach((c) => {
+        const clienteId = c.crediarios_clientes?.cliente_id || 'unknown';
+        const nome = c.crediarios_clientes?.clientes?.nome || 'Sem Cliente';
+        const celular = c.crediarios_clientes?.clientes?.celular || '';
+        const pagar = Number(c.valor_pagar || 0);
+        const pago = Number(c.valor_pago || 0);
+        const pendente = pagar - pago;
+
+        if (!grouped[clienteId]) {
+          grouped[clienteId] = { nome, celular, items: [], totalPendente: 0 };
+        }
+        grouped[clienteId].items.push(c);
+        grouped[clienteId].totalPendente += pendente;
+      });
+
+      const sortedClients = Object.values(grouped).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+      const totalGeral = sortedClients.reduce((sum, c) => sum + c.totalPendente, 0);
+
+      const fmtCurrency = (val: number) =>
+        new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+      const fmtDate = (dateStr: string | null | undefined) => {
+        if (!dateStr) return '-';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '-';
+        return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+      };
+
+      const startFormatted = new Date(pdfStartDate + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+      const endFormatted = new Date(pdfEndDate + 'T12:00:00Z').toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+      const generatedAt = new Date().toLocaleString('pt-BR');
+
+      const clientRows = sortedClients.map((client) => {
+        const itemRows = client.items
+          .sort((a, b) => new Date(a.data_vencimento || 0).getTime() - new Date(b.data_vencimento || 0).getTime())
+          .map((item) => {
+            const pagar = Number(item.valor_pagar || 0);
+            const pago = Number(item.valor_pago || 0);
+            const pendente = pagar - pago;
+            const daysOverdue = item.data_vencimento
+              ? Math.floor((today.getTime() - new Date(item.data_vencimento).getTime()) / (1000 * 60 * 60 * 24))
+              : 0;
+            return `
+              <tr>
+                <td>${item.historico?.descricao || '-'}</td>
+                <td>${item.referente_a || '-'}</td>
+                <td>${item.parcelas || '1/1'}</td>
+                <td class="date">${fmtDate(item.data_vencimento)}</td>
+                <td class="amount">${fmtCurrency(pagar)}</td>
+                <td class="amount paid">${fmtCurrency(pago)}</td>
+                <td class="amount overdue">${fmtCurrency(pendente)}</td>
+                <td class="days"><span class="days-badge">${daysOverdue}d</span></td>
+              </tr>`;
+          }).join('');
+
+        return `
+          <div class="client-block">
+            <div class="client-header">
+              <div class="client-info">
+                <span class="client-name">${client.nome}</span>
+                ${client.celular ? `<span class="client-phone">${client.celular}</span>` : ''}
+              </div>
+              <div class="client-total">
+                <span class="total-label">Total Pendente</span>
+                <span class="total-value">${fmtCurrency(client.totalPendente)}</span>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Histórico</th>
+                  <th>Referente a</th>
+                  <th>Parcela</th>
+                  <th>Vencimento</th>
+                  <th>Valor Total</th>
+                  <th>Pago</th>
+                  <th>Pendente</th>
+                  <th>Atraso</th>
+                </tr>
+              </thead>
+              <tbody>${itemRows}</tbody>
+            </table>
+          </div>`;
+      }).join('');
+
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relatório de Inadimplentes - MundoFitness</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 11px;
+      color: #1e293b;
+      background: white;
+      padding: 24px 28px;
+    }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #7c3aed;
+      margin-bottom: 20px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 800; font-size: 16px;
+    }
+    .brand-text { font-size: 18px; font-weight: 800; color: #7c3aed; }
+    .brand-sub { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+    .report-meta { text-align: right; }
+    .report-title { font-size: 14px; font-weight: 700; color: #1e293b; }
+    .report-period { font-size: 10px; color: #64748b; margin-top: 3px; }
+    .report-generated { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+    .summary-banner {
+      background: linear-gradient(135deg, #7c3aed15, #a855f715);
+      border: 1px solid #7c3aed30;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      gap: 32px;
+      align-items: center;
+    }
+    .summary-item { display: flex; flex-direction: column; gap: 2px; }
+    .summary-label { font-size: 9px; font-weight: 600; color: #7c3aed; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-value { font-size: 16px; font-weight: 800; color: #1e293b; }
+    .summary-value.red { color: #dc2626; }
+    .client-block { margin-bottom: 18px; page-break-inside: avoid; }
+    .client-header {
+      background: linear-gradient(135deg, #f8f4ff, #f3e8ff);
+      border: 1px solid #e9d5ff;
+      border-radius: 8px 8px 0 0;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .client-info { display: flex; flex-direction: column; gap: 2px; }
+    .client-name { font-weight: 700; font-size: 12px; color: #4c1d95; }
+    .client-phone { font-size: 9px; color: #7c3aed; }
+    .client-total { text-align: right; }
+    .total-label { font-size: 9px; color: #7c3aed; display: block; font-weight: 600; text-transform: uppercase; }
+    .total-value { font-size: 13px; font-weight: 800; color: #dc2626; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #e9d5ff; border-top: none; }
+    thead tr { background: #4c1d95; }
+    thead th { padding: 7px 10px; text-align: left; color: white; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+    thead th.amount, thead th.days { text-align: right; }
+    tbody tr { border-bottom: 1px solid #f1f5f9; }
+    tbody tr:nth-child(even) { background: #fafafa; }
+    tbody td { padding: 7px 10px; vertical-align: middle; }
+    td.date { white-space: nowrap; color: #64748b; }
+    td.amount { text-align: right; font-weight: 600; }
+    td.paid { color: #16a34a; }
+    td.overdue { color: #dc2626; font-weight: 700; }
+    td.days { text-align: right; }
+    .days-badge {
+      display: inline-block;
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+      border-radius: 99px;
+      padding: 1px 7px;
+      font-size: 9px;
+      font-weight: 700;
+    }
+    .report-footer {
+      margin-top: 24px;
+      padding-top: 12px;
+      border-top: 1px dashed #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .footer-total {
+      font-size: 13px;
+      font-weight: 800;
+      color: #1e293b;
+    }
+    .footer-total span { color: #dc2626; }
+    .footer-note { font-size: 9px; color: #94a3b8; }
+    @media print {
+      body { padding: 15px 20px; }
+      .client-block { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="report-header">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div>
+        <div class="brand-text">MundoFitness</div>
+        <div class="brand-sub">Sistema de Gestão</div>
+      </div>
+    </div>
+    <div class="report-meta">
+      <div class="report-title">Relatório de Inadimplentes</div>
+      <div class="report-period">Período de vencimento: ${startFormatted} a ${endFormatted}</div>
+      <div class="report-generated">Gerado em: ${generatedAt}</div>
+    </div>
+  </div>
+
+  <div class="summary-banner">
+    <div class="summary-item">
+      <span class="summary-label">Total de Clientes</span>
+      <span class="summary-value">${sortedClients.length}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Total de Lançamentos</span>
+      <span class="summary-value">${overdueItems.length}</span>
+    </div>
+    <div class="summary-item">
+      <span class="summary-label">Total Inadimplente</span>
+      <span class="summary-value red">${fmtCurrency(totalGeral)}</span>
+    </div>
+  </div>
+
+  ${sortedClients.length === 0
+    ? '<p style="text-align:center; padding: 40px; color: #94a3b8; font-size: 14px;">Nenhum pagamento vencido encontrado para o período selecionado.</p>'
+    : clientRows
+  }
+
+  <div class="report-footer">
+    <div class="footer-total">Total Geral Pendente: <span>${fmtCurrency(totalGeral)}</span></div>
+    <div class="footer-note">Relatório gerado pelo sistema MundoFitness &bull; ${generatedAt}</div>
+  </div>
+</body>
+</html>`;
+
+      const printWindow = window.open('', '_blank', 'width=900,height=700');
+      if (printWindow) {
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 800);
+      }
+
+      setShowPdfReportModal(false);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleOpenPdfModal = () => {
+    // Default: último mês completo vencido
+    const today = new Date();
+    const firstDayThisMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+    const lastDayPrevMonth = new Date(firstDayThisMonth.getTime() - 1);
+    const firstDayPrevMonth = new Date(Date.UTC(lastDayPrevMonth.getUTCFullYear(), lastDayPrevMonth.getUTCMonth(), 1));
+
+    const toInputDate = (d: Date) => {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    setPdfStartDate(toInputDate(firstDayPrevMonth));
+    setPdfEndDate(toInputDate(lastDayPrevMonth));
+    setShowPdfReportModal(true);
+  };
+
   // Formatação de Moeda
   const formatCurrency = (val: number | undefined | null) => {
     if (val === undefined || val === null) return 'R$ 0,00';
@@ -1040,6 +1356,15 @@ const CrediariosTab: React.FC = () => {
             </AnimatePresence>
           </div>
           
+          <button
+            onClick={handleOpenPdfModal}
+            className="flex items-center gap-2 border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-400 py-2.5 px-4 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-sm"
+            title="Gerar relatório PDF de pagamentos vencidos em aberto"
+          >
+            <FileText size={16} />
+            Relatório PDF
+          </button>
+
           <button
             onClick={fetchCrediarios}
             className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 py-2.5 px-4 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-sm"
@@ -2413,6 +2738,199 @@ const CrediariosTab: React.FC = () => {
           </motion.div>
         </div>
       )}
+
+      {/* MODAL: RELATÓRIO PDF DE INADIMPLENTES */}
+      <AnimatePresence>
+        {showPdfReportModal && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5 pb-4 border-b border-dashed border-slate-200 dark:border-slate-700/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                    <FileText size={20} />
+                  </div>
+                  <div>
+                    <h3 className={`text-base font-bold ${A.textPrimary}`}>Relatório de Inadimplentes</h3>
+                    <p className={`text-[11px] ${A.textMuted} mt-0.5`}>Pagamentos vencidos e em aberto</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPdfReportModal(false)}
+                  className={`p-1.5 rounded-lg ${A.bgHover} text-slate-400 hover:text-slate-600 transition-all cursor-pointer`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Info Banner */}
+              <div className="flex items-start gap-3 p-3.5 rounded-2xl border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 dark:border-amber-800/40 mb-5">
+                <AlertCircle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-700 dark:text-amber-400 font-medium leading-relaxed">
+                  O relatório listará <strong>todos os pagamentos vencidos e não pagos</strong> cujo vencimento esteja dentro do período selecionado, agrupados por cliente.
+                </p>
+              </div>
+
+              {/* Inputs de Período */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                      Data Início *
+                    </label>
+                    <input
+                      type="date"
+                      value={pdfStartDate}
+                      onChange={(e) => setPdfStartDate(e.target.value)}
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                      Data Fim *
+                    </label>
+                    <input
+                      type="date"
+                      value={pdfEndDate}
+                      onChange={(e) => setPdfEndDate(e.target.value)}
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    />
+                  </div>
+                </div>
+
+                {/* Preview count */}
+                {pdfStartDate && pdfEndDate && (() => {
+                  const startD = new Date(pdfStartDate + 'T00:00:00Z');
+                  const endD = new Date(pdfEndDate + 'T23:59:59Z');
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const count = crediarios.filter((c) => {
+                    const pagar = Number(c.valor_pagar || 0);
+                    const pago = Number(c.valor_pago || 0);
+                    if (!(!c.data_pagamento && pagar > pago)) return false;
+                    if (!c.data_vencimento) return false;
+                    const venc = new Date(c.data_vencimento);
+                    return venc.getTime() < today.getTime() && venc >= startD && venc <= endD;
+                  }).length;
+                  const total = crediarios
+                    .filter((c) => {
+                      const pagar = Number(c.valor_pagar || 0);
+                      const pago = Number(c.valor_pago || 0);
+                      if (!(!c.data_pagamento && pagar > pago)) return false;
+                      if (!c.data_vencimento) return false;
+                      const venc = new Date(c.data_vencimento);
+                      return venc.getTime() < today.getTime() && venc >= startD && venc <= endD;
+                    })
+                    .reduce((sum, c) => sum + (Number(c.valor_pagar || 0) - Number(c.valor_pago || 0)), 0);
+                  return (
+                    <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <Receipt size={15} className="text-brand-purple" />
+                        <span className={`text-xs font-semibold ${A.textMuted}`}>
+                          {count} lançamento{count !== 1 ? 's' : ''} encontrado{count !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <span className="text-xs font-extrabold text-rose-600">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total)}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                {/* Atalhos de Período */}
+                <div className="space-y-1.5">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Atalhos
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: 'Últimos 30 dias', getDates: () => {
+                        const end = new Date();
+                        end.setDate(end.getDate() - 1);
+                        const start = new Date();
+                        start.setDate(start.getDate() - 30);
+                        return { s: start, e: end };
+                      }},
+                      { label: 'Últimos 90 dias', getDates: () => {
+                        const end = new Date();
+                        end.setDate(end.getDate() - 1);
+                        const start = new Date();
+                        start.setDate(start.getDate() - 90);
+                        return { s: start, e: end };
+                      }},
+                      { label: 'Este ano', getDates: () => {
+                        const now = new Date();
+                        return {
+                          s: new Date(Date.UTC(now.getUTCFullYear(), 0, 1)),
+                          e: new Date()
+                        };
+                      }},
+                      { label: 'Tudo', getDates: () => {
+                        return {
+                          s: new Date(Date.UTC(2020, 0, 1)),
+                          e: new Date()
+                        };
+                      }},
+                    ].map(({ label, getDates }) => (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          const { s, e } = getDates();
+                          const fmt = (d: Date) => {
+                            const y = d.getUTCFullYear();
+                            const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+                            const day = String(d.getUTCDate()).padStart(2, '0');
+                            return `${y}-${m}-${day}`;
+                          };
+                          // For non-UTC shortcut dates
+                          const fmtLocal = (d: Date) => {
+                            const y = d.getFullYear();
+                            const m = String(d.getMonth() + 1).padStart(2, '0');
+                            const day = String(d.getDate()).padStart(2, '0');
+                            return `${y}-${m}-${day}`;
+                          };
+                          setPdfStartDate(label === 'Este ano' || label === 'Tudo' ? fmt(s) : fmtLocal(s));
+                          setPdfEndDate(label === 'Este ano' || label === 'Tudo' ? fmtLocal(e) : fmtLocal(e));
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-brand-purple hover:text-brand-purple transition-all`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex justify-end gap-2 pt-5 mt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowPdfReportModal(false)}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold ${A.bgHover} ${A.textPrimary} transition-all`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={generatePdfReport}
+                  disabled={!pdfStartDate || !pdfEndDate || isGeneratingPdf}
+                  className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <FileText size={15} />
+                  {isGeneratingPdf ? 'Gerando...' : 'Gerar PDF'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };
