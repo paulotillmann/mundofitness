@@ -40,6 +40,8 @@ interface Consorcio {
   dataretirada_date?: string;
   vencimentodia_number?: number;
   mesretirada_text?: string;
+  valor_retirado_number?: number | null;
+  credito_haver_number?: number | null;
   clientes?: {
     nome: string;
     outrasinformacoes?: string;
@@ -119,6 +121,8 @@ const ConsorciosTab: React.FC = () => {
   const [editCotaVencimentoDia, setEditCotaVencimentoDia] = useState<string>('');
   const [editCotaDataRetirada, setEditCotaDataRetirada] = useState<string>('');
   const [editCotaMesRetirada, setEditCotaMesRetirada] = useState<string>('');
+  const [editCotaValorRetirado, setEditCotaValorRetirado] = useState<string>('');
+  const [editCotaCreditoHaver, setEditCotaCreditoHaver] = useState<string>('');
   const [isSavingCota, setIsSavingCota] = useState<boolean>(false);
   const [showEditRetiradaMonthPopover, setShowEditRetiradaMonthPopover] = useState<boolean>(false);
   const [editRetiradaYear, setEditRetiradaYear] = useState<number>(new Date().getFullYear());
@@ -447,6 +451,13 @@ const ConsorciosTab: React.FC = () => {
     setEditCotaVencimentoDia(cota.vencimentodia_number !== undefined && cota.vencimentodia_number !== null ? String(cota.vencimentodia_number) : '');
     setEditCotaDataRetirada(cota.dataretirada_date ? cota.dataretirada_date.substring(0, 10) : '');
     setEditCotaMesRetirada(cota.mesretirada_text || '');
+
+    const valRet = cota.valor_retirado_number !== undefined && cota.valor_retirado_number !== null ? cota.valor_retirado_number : null;
+    const credHaver = cota.credito_haver_number !== undefined && cota.credito_haver_number !== null ? cota.credito_haver_number : null;
+
+    setEditCotaValorRetirado(valRet !== null ? formatCurrencyPTBR(Math.round(valRet * 100)) : '');
+    setEditCotaCreditoHaver(credHaver !== null ? formatCurrencyPTBR(Math.round(credHaver * 100)) : '');
+
     setShowEditRetiradaMonthPopover(false);
 
     if (cota.mesretirada_text && cota.mesretirada_text.includes('/')) {
@@ -470,11 +481,16 @@ const ConsorciosTab: React.FC = () => {
     setIsSavingCota(true);
     try {
       const dataRetirada = editCotaDataRetirada ? `${editCotaDataRetirada}T12:00:00Z` : null;
+      const numValorRetirado = editCotaValorRetirado ? parseFloat(editCotaValorRetirado.replace(/\D/g, '')) / 100 : null;
+      const numCreditoHaver = editCotaCreditoHaver ? parseFloat(editCotaCreditoHaver.replace(/\D/g, '')) / 100 : null;
+
       const { error } = await supabase
         .from('consorcios')
         .update({
           dataretirada_date: dataRetirada,
           mesretirada_text: editCotaMesRetirada || null,
+          valor_retirado_number: numValorRetirado,
+          credito_haver_number: numCreditoHaver,
           updated_at: new Date().toISOString()
         })
         .eq('id', cotaToEdit.id);
@@ -644,7 +660,17 @@ const ConsorciosTab: React.FC = () => {
 
     const s = searchGrupo.toLowerCase().trim();
     if (s) {
-      list = list.filter((g) => (g.periodo_text || '').toLowerCase().includes(s));
+      const grupoIdsComClienteBuscado = new Set(
+        consorciosList
+          .filter((c) => (c.clientes?.nome || '').toLowerCase().includes(s))
+          .map((c) => c.grupo_id)
+      );
+
+      list = list.filter((g) => {
+        const matchesPeriodo = (g.periodo_text || '').toLowerCase().includes(s);
+        const matchesCliente = grupoIdsComClienteBuscado.has(g.id);
+        return matchesPeriodo || matchesCliente;
+      });
     }
 
     if (selectedFilterClienteId && gruposComCliente) {
@@ -652,7 +678,7 @@ const ConsorciosTab: React.FC = () => {
     }
 
     return list;
-  }, [gruposList, gruposFilterType, searchGrupo, selectedFilterClienteId, gruposComCliente]);
+  }, [gruposList, consorciosList, gruposFilterType, searchGrupo, selectedFilterClienteId, gruposComCliente]);
 
   // Garantir seleção de grupo inicial
   useEffect(() => {
@@ -669,6 +695,11 @@ const ConsorciosTab: React.FC = () => {
   const selectedGrupoObj = useMemo(() => {
     return gruposList.find((g) => g.id === selectedGrupoId) || null;
   }, [gruposList, selectedGrupoId]);
+
+  // Consórcio Selecionado
+  const selectedConsorcioObj = useMemo(() => {
+    return consorciosList.find((c) => c.id === selectedConsorcioId) || null;
+  }, [consorciosList, selectedConsorcioId]);
 
   // Clientes do Grupo Selecionado (Coluna 2)
   const filteredConsorciosList = useMemo(() => {
@@ -1344,7 +1375,7 @@ const ConsorciosTab: React.FC = () => {
               </span>
               <input
                 type="text"
-                placeholder="Buscar grupo..."
+                placeholder="Buscar por grupo ou cliente..."
                 value={searchGrupo}
                 onChange={(e) => setSearchGrupo(e.target.value)}
                 className={`w-full pl-9 pr-8 py-2 text-xs rounded-xl border ${A.inputText} outline-none focus:ring-1 focus:ring-brand-purple focus:border-transparent transition-all`}
@@ -1587,6 +1618,13 @@ const ConsorciosTab: React.FC = () => {
                                     </>
                                   )}
                                 </div>
+                                {Boolean(c.credito_haver_number && c.credito_haver_number > 0) && (
+                                  <div className="mt-1">
+                                    <span className="inline-flex items-center gap-1 text-[13px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">
+                                      Em Haver: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(c.credito_haver_number || 0)}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="p-3 text-right align-middle" onClick={(e) => e.stopPropagation()}>
@@ -1666,7 +1704,7 @@ const ConsorciosTab: React.FC = () => {
 
           {/* Cards de Totais Financeiros */}
           {selectedConsorcioId && (
-            <div className="grid grid-cols-2 gap-2 text-left">
+            <div className={`grid ${Boolean(selectedConsorcioObj?.credito_haver_number && selectedConsorcioObj.credito_haver_number > 0) ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'} gap-2 text-left`}>
               {/* Card 1: A Pagar */}
               <motion.div
                 whileHover={{ y: -3, scale: 1.01 }}
@@ -1722,6 +1760,34 @@ const ConsorciosTab: React.FC = () => {
                 </div>
                 <CircleCheck size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
               </motion.div>
+
+              {/* Card 3: Crédito em Haver */}
+              {Boolean(selectedConsorcioObj?.credito_haver_number && selectedConsorcioObj.credito_haver_number > 0) && (
+                <motion.div
+                  whileHover={{ y: -3, scale: 1.01 }}
+                  className="relative overflow-hidden p-3 border border-emerald-300 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100"
+                >
+                  <div className="flex justify-between items-start z-10 gap-1">
+                    <span className="text-[11px] xl:text-xs tracking-wider font-bold text-emerald-800 dark:text-emerald-300 uppercase truncate">
+                      Crédito em Haver
+                    </span>
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 bg-emerald-200/80 dark:bg-emerald-800/60 text-emerald-700 dark:text-emerald-200">
+                      <FolderHeart size={12} />
+                    </div>
+                  </div>
+                  <div className="my-1.5 z-10">
+                    <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-emerald-700 dark:text-emerald-300 block truncate">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedConsorcioObj?.credito_haver_number || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 z-10 truncate">
+                    <span className="truncate">
+                      {selectedConsorcioObj?.valor_retirado_number ? `Retirado: ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedConsorcioObj.valor_retirado_number)}` : 'Saldo em haver'}
+                    </span>
+                  </div>
+                  <FolderHeart size={64} className="absolute -right-2 -bottom-2 text-emerald-500/5 pointer-events-none z-0" />
+                </motion.div>
+              )}
             </div>
           )}
 
@@ -2368,6 +2434,58 @@ const ConsorciosTab: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Campos de Valor Retirado e Crédito em Haver */}
+              <div className="grid grid-cols-2 gap-4 border-t border-dashed pt-3 border-slate-200 dark:border-slate-700/50">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Valor Retirado (R$)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="R$ 0,00"
+                    value={editCotaValorRetirado}
+                    onChange={(e) => {
+                      const formatted = formatCurrencyPTBR(e.target.value);
+                      setEditCotaValorRetirado(formatted);
+                      const clean = e.target.value.replace(/\D/g, '');
+                      const valRetirado = clean ? parseFloat(clean) / 100 : 0;
+                      const valorTotalCota = cotaToEdit.grupos?.valorcota_number || selectedGrupoObj?.valorcota_number || 0;
+                      if (valorTotalCota > 0 && clean) {
+                        const haver = Math.max(0, valorTotalCota - valRetirado);
+                        setEditCotaCreditoHaver(formatCurrencyPTBR(Math.round(haver * 100)));
+                      } else if (!clean) {
+                        setEditCotaCreditoHaver('');
+                      }
+                    }}
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-brand-purple/50 focus:border-transparent transition-all shadow-sm`}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Crédito em Haver (R$)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="R$ 0,00"
+                    value={editCotaCreditoHaver}
+                    onChange={(e) => setEditCotaCreditoHaver(formatCurrencyPTBR(e.target.value))}
+                    className={`w-full px-4 py-2.5 text-sm rounded-xl border ${A.inputText} outline-none focus:ring-2 focus:ring-emerald-500/50 focus:border-transparent transition-all shadow-sm font-bold text-emerald-600 dark:text-emerald-400`}
+                  />
+                </div>
+              </div>
+
+              {Boolean(cotaToEdit.grupos?.valorcota_number || selectedGrupoObj?.valorcota_number) && (
+                <p className="text-[11px] text-slate-400 italic">
+                  Valor total da cota do grupo: {' '}
+                  <strong className="text-slate-600 dark:text-slate-300 font-semibold">
+                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                      cotaToEdit.grupos?.valorcota_number || selectedGrupoObj?.valorcota_number || 0
+                    )}
+                  </strong>
+                </p>
+              )}
 
               <div className="flex justify-end gap-3 pt-2">
                 <button
