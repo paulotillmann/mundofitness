@@ -90,9 +90,9 @@ const CrediariosTab: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Filtro de Período Geral (Mock-up)
-  const [selectedMonth, setSelectedMonth] = useState<number | null>(6); // Default para Julho (como no mockup)
-  const [selectedYear, setSelectedYear] = useState<number | null>(2026); // Default para 2026
+  // Filtro de Período Geral (inicia sempre no mês e ano atuais)
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(() => new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number | null>(() => new Date().getFullYear());
   const [isPeriodPickerOpen, setIsPeriodPickerOpen] = useState<boolean>(false);
 
   // Cliente selecionado para a Coluna 2
@@ -247,6 +247,20 @@ const CrediariosTab: React.FC = () => {
   const [editDataCompra, setEditDataCompra] = useState<string>('');
   const [editSubmitting, setEditSubmitting] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Estados do Modal de Alteração de Parcela Pendente
+  const [showEditPendenteModal, setShowEditPendenteModal] = useState<boolean>(false);
+  const [selectedLaunchForEditPendente, setSelectedLaunchForEditPendente] = useState<Crediario | null>(null);
+  const [editPendenteDataCompra, setEditPendenteDataCompra] = useState<string>('');
+  const [editPendenteReferenteA, setEditPendenteReferenteA] = useState<string>('');
+  const [editPendenteHistoricoId, setEditPendenteHistoricoId] = useState<string>('');
+  const [editPendenteNovaDescricao, setEditPendenteNovaDescricao] = useState<string>('');
+  const [editPendenteShowNovaDescricao, setEditPendenteShowNovaDescricao] = useState<boolean>(false);
+  const [editPendenteDataVencimento, setEditPendenteDataVencimento] = useState<string>('');
+  const [editPendenteValorPagar, setEditPendenteValorPagar] = useState<string>('');
+  const [editPendenteSubmitting, setEditPendenteSubmitting] = useState<boolean>(false);
+  const [editPendenteError, setEditPendenteError] = useState<string | null>(null);
+
   const [showAbertoCrediariosModal, setShowAbertoCrediariosModal] = useState<boolean>(false);
 
   // Estados do Modal de Relatório PDF
@@ -392,6 +406,138 @@ const CrediariosTab: React.FC = () => {
       setEditError(err.message || 'Erro ao salvar alterações.');
     } finally {
       setEditSubmitting(false);
+    }
+  };
+
+  const handleOpenEditPendenteModal = (launch: Crediario) => {
+    setSelectedLaunchForEditPendente(launch);
+
+    let formattedDataCompra = '';
+    if (launch.data_compra) {
+      try {
+        const d = new Date(launch.data_compra);
+        if (!isNaN(d.getTime())) {
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          formattedDataCompra = `${year}-${month}-${day}`;
+        }
+      } catch {}
+    }
+    setEditPendenteDataCompra(formattedDataCompra);
+
+    setEditPendenteReferenteA(launch.referente_a || '');
+    setEditPendenteHistoricoId(launch.historico_id || (historicos.length > 0 ? historicos[0].id : ''));
+    setEditPendenteNovaDescricao('');
+    setEditPendenteShowNovaDescricao(false);
+
+    let formattedDataVencimento = '';
+    if (launch.data_vencimento) {
+      try {
+        const d = new Date(launch.data_vencimento);
+        if (!isNaN(d.getTime())) {
+          const year = d.getUTCFullYear();
+          const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          formattedDataVencimento = `${year}-${month}-${day}`;
+        }
+      } catch {}
+    }
+    setEditPendenteDataVencimento(formattedDataVencimento);
+
+    setEditPendenteValorPagar(formatCurrencyInput(Number(launch.valor_pagar || 0)));
+    setEditPendenteError(null);
+    setShowEditPendenteModal(true);
+  };
+
+  const handleConfirmEditPendente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLaunchForEditPendente) return;
+
+    setEditPendenteSubmitting(true);
+    setEditPendenteError(null);
+
+    const valorPagarNum = parseCurrencyInputToNumber(editPendenteValorPagar);
+    if (valorPagarNum <= 0) {
+      setEditPendenteError('O valor a pagar deve ser maior que zero.');
+      setEditPendenteSubmitting(false);
+      return;
+    }
+
+    try {
+      let finalHistoricoId = editPendenteHistoricoId;
+
+      if (editPendenteShowNovaDescricao) {
+        if (!editPendenteNovaDescricao.trim()) {
+          setEditPendenteError('A descrição do novo histórico é obrigatória.');
+          setEditPendenteSubmitting(false);
+          return;
+        }
+
+        const { data: newHist, error: histErr } = await supabase
+          .from('historico')
+          .insert([{ descricao: editPendenteNovaDescricao.trim() }])
+          .select();
+
+        if (histErr) {
+          if (histErr.code === '23505') {
+            throw new Error('Já existe um histórico cadastrado com esta descrição.');
+          }
+          throw histErr;
+        }
+
+        if (newHist && newHist.length > 0) {
+          finalHistoricoId = newHist[0].id;
+          await fetchHistoricos();
+        } else {
+          throw new Error('Falha ao obter ID do histórico criado.');
+        }
+      }
+
+      if (!finalHistoricoId) {
+        setEditPendenteError('Selecione ou crie um histórico.');
+        setEditPendenteSubmitting(false);
+        return;
+      }
+
+      const updatedDataCompra = editPendenteDataCompra ? new Date(editPendenteDataCompra + 'T12:00:00Z').toISOString() : null;
+      const updatedDataVencimento = editPendenteDataVencimento ? new Date(editPendenteDataVencimento + 'T12:00:00Z').toISOString() : null;
+      const updatedReferenteA = editPendenteReferenteA.trim() || null;
+
+      const { data, error } = await supabase
+        .from('crediarios')
+        .update({
+          data_compra: updatedDataCompra,
+          referente_a: updatedReferenteA,
+          historico_id: finalHistoricoId,
+          data_vencimento: updatedDataVencimento,
+          valor_pagar: valorPagarNum,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedLaunchForEditPendente.id)
+        .select(`
+          *,
+          crediarios_clientes (
+            cliente_id,
+            clientes (nome, celular, outrasinformacoes)
+          ),
+          historico (descricao)
+        `);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const updatedLaunch = data[0];
+        setCrediarios(prev => prev.map(c => c.id === updatedLaunch.id ? updatedLaunch : c));
+      }
+
+      setShowEditPendenteModal(false);
+      setSelectedLaunchForEditPendente(null);
+    } catch (err: any) {
+      console.error('Erro ao alterar parcela pendente:', err);
+      setEditPendenteError(err.message || 'Erro ao salvar alterações.');
+    } finally {
+      setEditPendenteSubmitting(false);
     }
   };
 
@@ -1295,16 +1441,16 @@ const CrediariosTab: React.FC = () => {
                   {/* Navegação de Ano */}
                   <div className="flex items-center justify-between mb-4">
                     <button
-                      onClick={() => setSelectedYear(prev => (prev ? prev - 1 : 2026))}
+                      onClick={() => setSelectedYear(prev => (prev ? prev - 1 : new Date().getFullYear()))}
                       className={`p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors`}
                     >
                       <ChevronLeft size={18} />
                     </button>
                     <span className={`font-extrabold text-base ${A.textPrimary}`}>
-                      {selectedYear || 2026}
+                      {selectedYear || new Date().getFullYear()}
                     </span>
                     <button
-                      onClick={() => setSelectedYear(prev => (prev ? prev + 1 : 2026))}
+                      onClick={() => setSelectedYear(prev => (prev ? prev + 1 : new Date().getFullYear()))}
                       className={`p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors`}
                     >
                       <ChevronRight size={18} />
@@ -1323,7 +1469,7 @@ const CrediariosTab: React.FC = () => {
                           onClick={() => {
                             setSelectedMonth(idx);
                             if (!selectedYear) {
-                              setSelectedYear(2026);
+                              setSelectedYear(new Date().getFullYear());
                             }
                             setIsPeriodPickerOpen(false);
                           }}
@@ -1846,13 +1992,22 @@ const CrediariosTab: React.FC = () => {
                         </div>
                         <div className="col-span-1 flex items-center justify-center gap-1">
                           {!isPago && (
-                            <button
-                              onClick={() => handleOpenBaixaModal(launch)}
-                              className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors active:scale-95"
-                              title="Dar Baixa no Pagamento"
-                            >
-                              <CheckCircle2 size={16} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleOpenBaixaModal(launch)}
+                                className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors active:scale-95 cursor-pointer"
+                                title="Dar Baixa no Pagamento"
+                              >
+                                <CheckCircle2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditPendenteModal(launch)}
+                                className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors active:scale-95 cursor-pointer"
+                                title="Alterar Parcela Pendente"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                            </>
                           )}
                           {isPago && (
                             <button
@@ -2340,6 +2495,178 @@ const CrediariosTab: React.FC = () => {
                     className="bg-brand-purple hover:bg-brand-purpleDark text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md cursor-pointer transition-all disabled:opacity-50"
                   >
                     {editSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE ALTERAÇÃO DE PARCELA PENDENTE */}
+      <AnimatePresence>
+        {showEditPendenteModal && selectedLaunchForEditPendente && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`w-full max-w-lg rounded-[24px] border ${A.border} ${A.card} p-6 shadow-2xl space-y-4 my-8 text-left`}
+            >
+              <div className="flex items-center justify-between gap-4 pb-2 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3 text-brand-purple">
+                  <Pencil size={24} />
+                  <h3 className={`font-bold text-lg ${A.textPrimary}`}>
+                    Alterar Parcela Pendente
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditPendenteModal(false);
+                    setSelectedLaunchForEditPendente(null);
+                  }}
+                  className={`p-1.5 rounded-lg ${A.bgHover} ${A.textMuted} hover:text-rose-500 transition-colors`}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {editPendenteError && (
+                <div className="flex items-start gap-3 p-3 rounded-xl border border-rose-200 bg-rose-50 dark:bg-rose-950/20 dark:border-rose-800/40 text-rose-800 dark:text-rose-300 text-xs font-semibold shadow-sm">
+                  <AlertCircle size={16} className="text-rose-500 flex-shrink-0 mt-0.5" />
+                  <span>{editPendenteError}</span>
+                </div>
+              )}
+
+              <div className="text-xs space-y-1 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <p className={`${A.textMuted}`}>
+                  Cliente: <strong className={`${A.textPrimary}`}>{selectedClientData?.nome}</strong>
+                </p>
+                {selectedLaunchForEditPendente.parcelas && (
+                  <p className={`${A.textMuted}`}>
+                    Parcela: <strong className={`${A.textPrimary}`}>{selectedLaunchForEditPendente.parcelas} ({selectedLaunchForEditPendente.tipo_pagamento || 'Crediário'})</strong>
+                  </p>
+                )}
+              </div>
+
+              <form onSubmit={handleConfirmEditPendente} className="space-y-4 pt-1">
+                {/* 1. Histórico / Descrição */}
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                      Histórico / Descrição *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditPendenteShowNovaDescricao(!editPendenteShowNovaDescricao);
+                        setEditPendenteNovaDescricao('');
+                      }}
+                      className="text-[10px] font-bold text-brand-purple hover:underline cursor-pointer"
+                    >
+                      {editPendenteShowNovaDescricao ? 'Selecionar Existente' : '+ Criar Novo Histórico'}
+                    </button>
+                  </div>
+
+                  {editPendenteShowNovaDescricao ? (
+                    <input
+                      type="text"
+                      required
+                      value={editPendenteNovaDescricao}
+                      onChange={(e) => setEditPendenteNovaDescricao(e.target.value)}
+                      placeholder="Descrição do novo histórico (ex: Venda Luva)"
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    />
+                  ) : (
+                    <select
+                      value={editPendenteHistoricoId}
+                      onChange={(e) => setEditPendenteHistoricoId(e.target.value)}
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    >
+                      {historicos.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.descricao}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* 2. Referente a */}
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Referente a
+                  </label>
+                  <input
+                    type="text"
+                    value={editPendenteReferenteA}
+                    onChange={(e) => setEditPendenteReferenteA(e.target.value)}
+                    placeholder="Ex: mensalidade, suplementos"
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                  />
+                </div>
+
+                {/* 3. Data da Compra e Valor a Pagar */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                      Data da Compra
+                    </label>
+                    <input
+                      type="date"
+                      value={editPendenteDataCompra}
+                      onChange={(e) => setEditPendenteDataCompra(e.target.value)}
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                      Valor a Pagar *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editPendenteValorPagar}
+                      onChange={(e) => setEditPendenteValorPagar(formatCurrencyInput(e.target.value))}
+                      placeholder="R$ 0,00"
+                      className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                    />
+                  </div>
+                </div>
+
+                {/* 4. Data de Vencimento */}
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold uppercase tracking-wider ${A.textMuted}`}>
+                    Data de Vencimento *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editPendenteDataVencimento}
+                    onChange={(e) => setEditPendenteDataVencimento(e.target.value)}
+                    className={`w-full p-2.5 rounded-xl border outline-none text-sm font-medium ${A.inputText}`}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditPendenteModal(false);
+                      setSelectedLaunchForEditPendente(null);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold ${A.bgHover} transition-all cursor-pointer`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editPendenteSubmitting}
+                    className="bg-brand-purple hover:bg-brand-purpleDark text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    {editPendenteSubmitting ? 'Salvando...' : 'Salvar Alterações'}
                   </button>
                 </div>
               </form>
