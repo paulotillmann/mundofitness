@@ -509,7 +509,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* HEADER (Barra Superior) */}
-        <header className={`h-20 border-b ${A.border} ${isDark ? "bg-[#0B0F19]/50" : "bg-white/80"} backdrop-blur-md flex items-center justify-between px-6 md:px-8 z-20 shadow-sm`}>
+        <header className={`h-16 border-b ${A.border} ${isDark ? "bg-[#0B0F19]/50" : "bg-white/80"} backdrop-blur-md flex items-center justify-between px-6 md:px-8 z-20 shadow-sm`}>
           {/* Busca Global */}
           <div className="relative w-64 md:w-80">
             <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[#64748B]">
@@ -741,7 +741,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         </header>
 
         {/* CONTAINER DAS ROTAS (Outlet) */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto px-6 md:px-8 pt-3.5 md:pt-4 pb-6 md:pb-8">
           <AnimatePresence mode="wait">
             <Outlet />
           </AnimatePresence>

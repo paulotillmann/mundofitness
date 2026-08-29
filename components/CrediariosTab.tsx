@@ -107,19 +107,7 @@ const CrediariosTab: React.FC = () => {
 
   // Paginação dos Lançamentos (Coluna 2)
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(6);
-
-  useEffect(() => {
-    const handleResize = () => {
-      // Ajusta dinamicamente a quantidade de itens por página de acordo com a altura da janela
-      const availableHeight = window.innerHeight - 630;
-      const count = Math.max(4, Math.floor(availableHeight / 60));
-      setItemsPerPage(count);
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -1125,13 +1113,16 @@ const CrediariosTab: React.FC = () => {
     }).format(val);
   };
 
-  // Formatação de Data
+  // Formatação de Data (DD/MM/AA)
   const formatDate = (dateStr: string | undefined | null) => {
     if (!dateStr) return '-';
     try {
       const d = new Date(dateStr);
       if (isNaN(d.getTime())) return '-';
-      return d.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const year = String(d.getUTCFullYear()).slice(-2);
+      return `${day}/${month}/${year}`;
     } catch {
       return '-';
     }
@@ -1393,33 +1384,33 @@ const CrediariosTab: React.FC = () => {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -15 }}
       transition={{ duration: 0.4 }}
-      className="space-y-6"
+      className="space-y-3.5"
     >
       {/* Título e Filtro de Período Geral */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
-        <div className="space-y-1">
-          <h1 className={`text-3xl font-bold tracking-tight ${A.textPrimary}`}>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 text-left">
+        <div className="space-y-0.5">
+          <h1 className={`text-2xl sm:text-3xl font-bold tracking-tight ${A.textPrimary}`}>
             Crediários
           </h1>
-          <p className={`text-sm ${A.textMuted}`}>
+          <p className={`text-xs sm:text-sm ${A.textMuted}`}>
             Consulte e gerencie as pendências agrupadas por cliente e os lançamentos detalhados.
           </p>
         </div>
         
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex items-center gap-2.5 w-full md:w-auto">
           {/* Popover Calendário de Período Geral */}
           <div className="relative">
             <button
               onClick={() => setIsPeriodPickerOpen(!isPeriodPickerOpen)}
-              className={`month-popover-trigger flex items-center gap-2 border ${A.border} ${A.card} hover:bg-slate-50 dark:hover:bg-slate-700 py-2.5 px-4 rounded-full font-semibold shadow-sm transition-all active:scale-[0.98] text-sm`}
+              className={`month-popover-trigger flex items-center gap-2 border ${A.border} ${A.card} hover:bg-slate-50 dark:hover:bg-slate-700 py-2 px-3.5 rounded-full font-semibold shadow-sm transition-all active:scale-[0.98] text-xs sm:text-sm`}
             >
-              <Calendar size={16} className="text-brand-purple" />
+              <Calendar size={15} className="text-brand-purple" />
               <span className="text-brand-purple dark:text-purple-400 font-bold">
                 {selectedMonth !== null && selectedYear !== null
                   ? `01 - ${getDaysInMonth(selectedYear, selectedMonth)} ${monthsNames[selectedMonth]} ${selectedYear}`
                   : 'Todos os Períodos'}
               </span>
-              <ChevronDown size={16} className={`text-slate-400 transition-transform ${isPeriodPickerOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown size={15} className={`text-slate-400 transition-transform ${isPeriodPickerOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isPeriodPickerOpen && (
@@ -1504,16 +1495,16 @@ const CrediariosTab: React.FC = () => {
           
           <button
             onClick={handleOpenPdfModal}
-            className="flex items-center gap-2 border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-400 py-2.5 px-4 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-sm"
+            className="flex items-center gap-1.5 border border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-700 dark:text-rose-400 py-2 px-3.5 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-xs sm:text-sm"
             title="Gerar relatório PDF de pagamentos vencidos em aberto"
           >
-            <FileText size={16} />
+            <FileText size={15} />
             Relatório PDF
           </button>
 
           <button
             onClick={fetchCrediarios}
-            className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 py-2.5 px-4 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-sm"
+            className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 py-2 px-3.5 rounded-xl font-semibold shadow-sm transition-all active:scale-[0.98] text-xs sm:text-sm"
           >
             Atualizar Dados
           </button>
@@ -1521,65 +1512,65 @@ const CrediariosTab: React.FC = () => {
       </div>
 
       {/* Grid de Estatísticas Gerais do Período */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 select-none">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 select-none">
         {/* Total Lançamentos */}
         <div
-          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          className="border border-purple-200 rounded-[20px] p-4 shadow-sm flex flex-col justify-between min-h-[110px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md relative overflow-hidden text-left text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-purple-200/60 text-brand-purple">
-                <Receipt size={18} />
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-purple-200/60 text-brand-purple">
+                <Receipt size={16} />
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900/70">
                 Lançamentos
               </span>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-purple-855">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-purple-855">
               Qtd: {metrics.count}
             </span>
           </div>
-          <div className="mt-4">
-            <h4 className="text-2xl font-black tracking-tight text-purple-950">
+          <div className="mt-2.5">
+            <h4 className="text-xl sm:text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalPagar)}
             </h4>
-            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
+            <p className="text-[10px] text-purple-800/80 font-medium mt-0.5">
               Valor total a receber lançado
             </p>
           </div>
-          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-2.5 overflow-hidden">
             <div className="bg-brand-purple h-full rounded-full w-full" />
           </div>
         </div>
 
         {/* Total Recebido */}
         <div
-          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          className="border border-purple-200 rounded-[20px] p-4 shadow-sm flex flex-col justify-between min-h-[110px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md relative overflow-hidden text-left text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-purple-200/60 text-emerald-600">
-                <TrendingUp size={18} />
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-purple-200/60 text-emerald-600">
+                <TrendingUp size={16} />
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900/70">
                 Total Recebido
               </span>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-emerald-700">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-emerald-700">
               Pago
             </span>
           </div>
-          <div className="mt-4">
-            <h4 className="text-2xl font-black tracking-tight text-purple-950">
+          <div className="mt-2.5">
+            <h4 className="text-xl sm:text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalPago)}
             </h4>
-            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
+            <p className="text-[10px] text-purple-800/80 font-medium mt-0.5">
               Total pago no período
             </p>
           </div>
-          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-2.5 overflow-hidden">
             <div 
               className="bg-emerald-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPagar > 0 ? (metrics.totalPago / metrics.totalPagar) * 100 : 0}%` }}
@@ -1590,31 +1581,31 @@ const CrediariosTab: React.FC = () => {
         {/* Total Em Aberto */}
         <div
           onClick={() => setShowAbertoCrediariosModal(true)}
-          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950 cursor-pointer shadow-sm hover:shadow-md"
+          className="border border-purple-200 rounded-[20px] p-4 shadow-sm flex flex-col justify-between min-h-[110px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md relative overflow-hidden text-left text-purple-950 cursor-pointer"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-purple-200/60 text-rose-600">
-                <DollarSign size={18} />
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-purple-200/60 text-rose-600">
+                <DollarSign size={16} />
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900/70">
                 Total Em Aberto
               </span>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-rose-700">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-rose-700">
               Pendente
             </span>
           </div>
-          <div className="mt-4">
-            <h4 className="text-2xl font-black tracking-tight text-purple-950">
+          <div className="mt-2.5">
+            <h4 className="text-xl sm:text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalAberto)}
             </h4>
-            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
+            <p className="text-[10px] text-purple-800/80 font-medium mt-0.5">
               Valor pendente de recebimento
             </p>
           </div>
-          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-2.5 overflow-hidden">
             <div 
               className="bg-rose-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPagar > 0 ? (metrics.totalAberto / metrics.totalPagar) * 100 : 0}%` }}
@@ -1624,31 +1615,31 @@ const CrediariosTab: React.FC = () => {
 
         {/* Taxas do Cartão */}
         <div
-          className="border border-purple-200 rounded-[24px] p-6 shadow-sm flex flex-col justify-between min-h-[140px] transition-all duration-200 hover:-translate-y-1 hover:shadow-md relative overflow-hidden text-left text-purple-950"
+          className="border border-purple-200 rounded-[20px] p-4 shadow-sm flex flex-col justify-between min-h-[110px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md relative overflow-hidden text-left text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-purple-200/60 text-amber-600">
-                <Percent size={18} />
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-purple-200/60 text-amber-600">
+                <Percent size={16} />
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-900/70">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-purple-900/70">
                 Taxas de Cartão
               </span>
             </div>
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-amber-700">
+            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border border-purple-300 bg-purple-200/50 text-amber-700">
               Despesa
             </span>
           </div>
-          <div className="mt-4">
-            <h4 className="text-2xl font-black tracking-tight text-purple-950">
+          <div className="mt-2.5">
+            <h4 className="text-xl sm:text-2xl font-black tracking-tight text-purple-950">
               {formatCurrency(metrics.totalTaxas)}
             </h4>
-            <p className="text-[10px] text-purple-800/80 font-medium mt-1">
+            <p className="text-[10px] text-purple-800/80 font-medium mt-0.5">
               Custo total de taxas de cartão
             </p>
           </div>
-          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-4 overflow-hidden">
+          <div className="w-full bg-purple-200/50 h-1.5 rounded-full mt-2.5 overflow-hidden">
             <div 
               className="bg-amber-500 h-full rounded-full transition-all duration-500"
               style={{ width: `${metrics.totalPago > 0 ? (metrics.totalTaxas / metrics.totalPago) * 100 : 0}%` }}
@@ -1658,9 +1649,9 @@ const CrediariosTab: React.FC = () => {
       </div>
 
       {/* Seção Principal de Duas Colunas */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 text-left">
         {/* COLUNA 1: Lista de Clientes (lg:col-span-3) */}
-        <div className={`lg:col-span-3 flex flex-col lg:h-[calc(100vh-380px)] lg:min-h-[480px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        <div className={`lg:col-span-3 flex flex-col lg:h-[calc(100vh-320px)] lg:min-h-[500px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {/* Header e Filtros da Coluna 1 */}
           <div className="p-4 border-b border-dashed border-slate-200 dark:border-slate-700 space-y-3 bg-slate-50/20 dark:bg-slate-900/10">
             <div className="flex items-center justify-between">
@@ -1723,7 +1714,7 @@ const CrediariosTab: React.FC = () => {
           </div>
 
           {/* Grid de Cards de Clientes */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
             {loading ? (
               <div className="flex flex-col items-center justify-center h-full gap-3">
                 <div className="w-8 h-8 border-3 border-brand-purple border-t-transparent rounded-full animate-spin" />
@@ -1748,7 +1739,7 @@ const CrediariosTab: React.FC = () => {
                   <div
                     key={client.id}
                     onClick={() => setSelectedClienteId(client.id)}
-                    className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                    className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
                       isSelected
                         ? 'border-brand-purple bg-purple-50/20 dark:bg-purple-950/20 shadow-sm'
                         : isEven
@@ -1757,18 +1748,18 @@ const CrediariosTab: React.FC = () => {
                     }`}
                   >
                     <div className="flex justify-between items-center">
-                      <div className="space-y-1 max-w-[75%]">
-                        <h3 className={`text-base font-bold truncate ${A.textPrimary}`}>{client.nome}</h3>
+                      <div className="space-y-0.5 max-w-[75%]">
+                        <h3 className={`text-sm font-bold truncate ${A.textPrimary}`}>{client.nome}</h3>
                         {client.celular && (
-                          <p className={`text-xs flex items-center gap-1.5 ${A.textMuted} mt-0.5`}>
-                            <Phone size={12} className="opacity-60" />
+                          <p className={`text-xs flex items-center gap-1.5 ${A.textMuted}`}>
+                            <Phone size={11} className="opacity-60" />
                             {client.celular}
                           </p>
                         )}
                         {client.outrasinformacoes && (
-                          <div className="mt-1">
+                          <div className="mt-0.5">
                             <span 
-                              className="inline-block text-[10px] font-bold px-2 py-0.5 rounded bg-[#d1d1d1] text-slate-800 max-w-full truncate" 
+                              className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#d1d1d1] text-slate-800 max-w-full truncate" 
                               title={client.outrasinformacoes}
                             >
                               {client.outrasinformacoes}
@@ -1777,7 +1768,7 @@ const CrediariosTab: React.FC = () => {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
+                        <span className={`w-2 h-2 rounded-full ${statusColor}`} />
                         <span className={`text-xs font-bold ${A.textMuted}`}>
                           {client.launchesCount} lanc.
                         </span>
@@ -1791,7 +1782,7 @@ const CrediariosTab: React.FC = () => {
         </div>
 
         {/* COLUNA 2: Lançamentos Detalhados (lg:col-span-9) */}
-        <div className={`lg:col-span-9 flex flex-col lg:h-[calc(100vh-380px)] lg:min-h-[480px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
+        <div className={`lg:col-span-9 flex flex-col lg:h-[calc(100vh-320px)] lg:min-h-[500px] h-[550px] border ${A.border} ${A.card} rounded-[24px] overflow-hidden shadow-sm`}>
           {selectedClientData ? (
             <>
               {/* Header do Cliente Selecionado */}
@@ -1901,7 +1892,7 @@ const CrediariosTab: React.FC = () => {
                 </div>
               </div>
               {/* Header do Grid (Alinhado com os cards de lançamentos) */}
-              <div className="px-4 py-2.5 grid grid-cols-12 gap-2 text-slate-450 dark:text-slate-500 uppercase tracking-wider font-bold text-xs text-left select-none">
+              <div className="px-4 py-2 grid grid-cols-12 gap-2 text-slate-450 dark:text-slate-500 uppercase tracking-wider font-bold text-[11px] text-left select-none">
                 <div className="col-span-1">COMPRA</div>
                 <div className="col-span-3">REFERENTE</div>
                 <div className="col-span-1">HISTÓRICO</div>
@@ -1914,7 +1905,7 @@ const CrediariosTab: React.FC = () => {
               </div>
 
               {/* Lista dos Lançamentos Individuais em Cards Stacked */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+              <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
                 {filteredLaunches.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
                     <div className="p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
@@ -1928,6 +1919,8 @@ const CrediariosTab: React.FC = () => {
                     const pagar = Number(launch.valor_pagar || 0);
                     const pago = Number(launch.valor_pago || 0);
                     const isPago = !!launch.data_pagamento || (pagar <= pago && pago > 0);
+                    const isPendente = !isPago;
+                    const isVencido = isPendente && !!launch.data_vencimento && new Date(launch.data_vencimento).getTime() < new Date().setHours(0, 0, 0, 0);
                     const isEven = idx % 2 === 0;
                     
                     // REF Format: e.g. "Jul/26"
@@ -1946,8 +1939,10 @@ const CrediariosTab: React.FC = () => {
                     return (
                       <div
                         key={launch.id}
-                        className={`p-4 grid grid-cols-12 gap-2 items-center rounded-2xl transition-all duration-200 text-sm text-left ${
-                          isEven
+                        className={`py-2 px-3.5 grid grid-cols-12 gap-2 items-center rounded-xl transition-all duration-200 text-xs sm:text-sm text-left ${
+                          isVencido
+                            ? 'border border-rose-200/60 bg-rose-50/15 dark:border-rose-900/30 dark:bg-rose-950/15'
+                            : isEven
                             ? 'bg-[#7c3aed08] dark:bg-[#7c3aed15]'
                             : 'bg-[#7c3aed00]'
                         }`}
@@ -1961,8 +1956,21 @@ const CrediariosTab: React.FC = () => {
                         <div className="col-span-1 text-slate-700 dark:text-slate-200 font-semibold truncate" title={launch.historico?.descricao || '-'}>
                           {launch.historico?.descricao || '-'}
                         </div>
-                        <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium">
-                          {formatDate(launch.data_vencimento)}
+                        <div className="col-span-1 font-medium truncate">
+                          {isVencido ? (
+                            <span className="flex items-center gap-1 text-rose-600 dark:text-rose-400 font-semibold" title="Pagamento em aberto e vencido!">
+                              <AlertCircle size={13} className="text-rose-500 flex-shrink-0" />
+                              <span>{formatDate(launch.data_vencimento)}</span>
+                            </span>
+                          ) : isPendente ? (
+                            <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                              <span>{formatDate(launch.data_vencimento)}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-600 dark:text-slate-300">
+                              {formatDate(launch.data_vencimento)}
+                            </span>
+                          )}
                         </div>
                         <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium truncate">
                           {launch.tipo_pagamento === 'Crediário' 
@@ -1975,7 +1983,7 @@ const CrediariosTab: React.FC = () => {
                         <div className="col-span-2 text-left">
                           {isPago ? (
                             <>
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400 block">
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400 block leading-tight">
                                 {formatCurrency(launch.valor_pago)}
                               </span>
                               <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium block leading-tight">
@@ -1983,8 +1991,16 @@ const CrediariosTab: React.FC = () => {
                                 {Number(launch.valor_taxa_cartao || 0) > 0 && ` (Taxa: ${formatCurrency(launch.valor_taxa_cartao)})`}
                               </span>
                             </>
+                          ) : isVencido ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-800/40 dark:text-rose-300" title="Pagamento em aberto e vencido">
+                              <AlertCircle size={11} className="text-rose-500 flex-shrink-0" />
+                              Pendente (Vencido)
+                            </span>
                           ) : (
-                            <span className="text-slate-400 dark:text-slate-500">-</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-950/40 dark:border-amber-800/40 dark:text-amber-300" title="Pagamento pendente a vencer">
+                              <Clock size={11} className="text-amber-500 flex-shrink-0" />
+                              Pendente
+                            </span>
                           )}
                         </div>
                         <div className="col-span-1 text-slate-600 dark:text-slate-300 font-medium">

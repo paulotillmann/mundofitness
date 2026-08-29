@@ -460,11 +460,10 @@ const ConsorciosTab: React.FC = () => {
 
     setShowEditRetiradaMonthPopover(false);
 
-    if (cota.mesretirada_text && cota.mesretirada_text.includes('/')) {
-      const parts = cota.mesretirada_text.split('/');
-      const yearPart = parseInt(parts[1]);
-      if (!isNaN(yearPart)) {
-        setEditRetiradaYear(2000 + yearPart);
+    if (cota.mesretirada_text) {
+      const parsed = parseMesAnoText(cota.mesretirada_text);
+      if (parsed && parsed.year) {
+        setEditRetiradaYear(parsed.year);
       } else {
         setEditRetiradaYear(new Date().getFullYear());
       }
@@ -1142,7 +1141,7 @@ const ConsorciosTab: React.FC = () => {
       </div>
 
       {/* Cards de Estatísticas Gerais */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 select-none">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 sm:gap-4 select-none">
         {/* Card 1: Total Aberto (Ativos) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
@@ -1150,57 +1149,57 @@ const ConsorciosTab: React.FC = () => {
             setOpenInstallmentsScope('ativos');
             setShowOpenInstallmentsModal(true);
           }}
-          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950 cursor-pointer shadow-sm hover:shadow-md"
+          className="relative overflow-hidden py-3 px-3.5 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between min-h-[100px] transition-all duration-200 text-purple-950 cursor-pointer hover:shadow-md"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
-            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+            <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
               Total Aberto (Ativos)
             </span>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
-              <Calendar size={16} />
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
+              <Calendar size={14} />
             </div>
           </div>
-          <div className="my-2 z-10">
-            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+          <div className="my-0.5 z-10">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-purple-955 block truncate leading-tight">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalAPagar)}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-orange-600 z-10 truncate">
-            <Calendar size={14} className="flex-shrink-0" />
+          <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
+            <Calendar size={13} className="flex-shrink-0" />
             <span className="truncate">
               {activeGroupsTotals.totalAPagarCount} aberta{activeGroupsTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
             </span>
           </div>
-          <Calendar size={72} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
+          <Calendar size={64} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
         </motion.div>
 
         {/* Card 2: Total Pago (Ativos) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
-          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          className="relative overflow-hidden py-3 px-3.5 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between min-h-[100px] transition-all duration-200 text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
-            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+            <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
               Total Pago (Ativos)
             </span>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
-              <CircleCheck size={16} />
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
+              <CircleCheck size={14} />
             </div>
           </div>
-          <div className="my-2 z-10">
-            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+          <div className="my-0.5 z-10">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-purple-955 block truncate leading-tight">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeGroupsTotals.totalPago)}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 z-10 truncate">
-            <CircleCheck size={14} className="flex-shrink-0" />
+          <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
+            <CircleCheck size={13} className="flex-shrink-0" />
             <span className="truncate">
               {activeGroupsTotals.totalPagoCount} paga{activeGroupsTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
             </span>
           </div>
-          <CircleCheck size={72} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
+          <CircleCheck size={64} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
         </motion.div>
 
         {/* Card 3: Em Aberto (Grupo) */}
@@ -1212,101 +1211,101 @@ const ConsorciosTab: React.FC = () => {
               setShowOpenInstallmentsModal(true);
             }
           }}
-          className={`relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950 ${
-            selectedGrupoId ? 'cursor-pointer shadow-sm hover:shadow-md' : ''
+          className={`relative overflow-hidden py-3 px-3.5 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between min-h-[100px] transition-all duration-200 text-purple-950 ${
+            selectedGrupoId ? 'cursor-pointer hover:shadow-md' : ''
           }`}
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
-            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+            <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
               Em Aberto (Grupo)
             </span>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
-              <Calendar size={16} />
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-orange-600">
+              <Calendar size={14} />
             </div>
           </div>
-          <div className="my-2 z-10">
-            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+          <div className="my-0.5 z-10">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-purple-955 block truncate leading-tight">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalAPagar)}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-orange-600 z-10 truncate">
-            <Calendar size={14} className="flex-shrink-0" />
+          <div className="flex items-center gap-1 text-[11px] font-bold text-orange-600 z-10 truncate">
+            <Calendar size={13} className="flex-shrink-0" />
             <span className="truncate">
               {grupoTotals.totalAPagarCount} aberta{grupoTotals.totalAPagarCount === 1 ? '' : 's'} {filterPeriodLabel}
             </span>
           </div>
-          <Calendar size={72} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
+          <Calendar size={64} className="absolute -right-3 -bottom-3 text-orange-500/5 pointer-events-none z-0" />
         </motion.div>
 
         {/* Card 4: Pagos (Grupo) */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
-          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          className="relative overflow-hidden py-3 px-3.5 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between min-h-[100px] transition-all duration-200 text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
-            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+            <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
               Pagos (Grupo)
             </span>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
-              <CircleCheck size={16} />
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-emerald-600">
+              <CircleCheck size={14} />
             </div>
           </div>
-          <div className="my-2 z-10">
-            <span className="text-2xl font-black tracking-tight text-purple-955 block truncate">
+          <div className="my-0.5 z-10">
+            <span className="text-xl sm:text-2xl font-black tracking-tight text-purple-955 block truncate leading-tight">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(grupoTotals.totalPago)}
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 z-10 truncate">
-            <CircleCheck size={14} className="flex-shrink-0" />
+          <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-600 z-10 truncate">
+            <CircleCheck size={13} className="flex-shrink-0" />
             <span className="truncate">
               {grupoTotals.totalPagoCount} paga{grupoTotals.totalPagoCount === 1 ? '' : 's'} {filterPeriodLabel}
             </span>
           </div>
-          <CircleCheck size={72} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
+          <CircleCheck size={64} className="absolute -right-3 -bottom-3 text-emerald-500/5 pointer-events-none z-0" />
         </motion.div>
 
         {/* Card 5: Retirada do Mês */}
         <motion.div
           whileHover={{ y: -3, scale: 1.01 }}
-          className="relative overflow-hidden p-4 border border-purple-200 rounded-[24px] shadow-sm flex flex-col justify-between min-h-[120px] transition-all duration-200 text-purple-950"
+          className="relative overflow-hidden py-3 px-3.5 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between min-h-[100px] transition-all duration-200 text-purple-950"
           style={{ backgroundColor: '#EFE0F8' }}
         >
           <div className="flex justify-between items-start z-10 gap-1">
-            <span className="text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
+            <span className="text-[11px] xl:text-xs tracking-wider font-bold text-purple-900/70 uppercase truncate">
               RETIRADA DO MÊS ({['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'][targetMonth]}/{String(targetYear).substring(2)})
             </span>
-            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-[#7C3AED]">
-              <ArrowUpRight size={16} />
+            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-200/60 text-[#7C3AED]">
+              <ArrowUpRight size={14} />
             </div>
           </div>
-          <div className="my-2 z-10 space-y-1">
+          <div className="my-0.5 z-10 space-y-0.5">
             {clienteRetiradaMesObj ? (
               <>
-                <span style={{ fontSize: '16pt' }} className="font-extrabold text-purple-955 block line-clamp-1 leading-tight">
+                <span style={{ fontSize: '15pt' }} className="font-extrabold text-purple-955 block line-clamp-1 leading-tight">
                   {clienteRetiradaMesObj.clientes?.nome}
                 </span>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5 text-xs">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5 text-xs">
                   {/* Status de Pagamento */}
                   <div className="flex items-center">
                     {clienteContempladoStatus === 'atraso' ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 leading-none">
                         <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                         Em Atraso
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 leading-none">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         Em Dia
                       </span>
                     )}
                   </div>
                   
-                  <span className="text-purple-300 dark:text-purple-700 font-bold text-[11px]">•</span>
+                  <span className="text-purple-300 dark:text-purple-700 font-bold text-[10px]">•</span>
                   
                   {/* Data de Retirada */}
-                  <span className="text-[11px] font-bold text-purple-900/60">
+                  <span className="text-[10px] sm:text-[11px] font-bold text-purple-900/60">
                     Retirada:{' '}
                     <span className="text-brand-purple font-extrabold">
                       {formatRetiradaDate(clienteRetiradaMesObj.dataretirada_date)}
@@ -1315,20 +1314,20 @@ const ConsorciosTab: React.FC = () => {
                 </div>
               </>
             ) : (
-              <span className="text-sm font-medium text-purple-900/50 block italic">
+              <span className="text-xs sm:text-sm font-medium text-purple-900/50 block italic">
                 Nenhuma retirada
               </span>
             )}
           </div>
           {!clienteRetiradaMesObj && (
-            <div className="flex items-center gap-1.5 text-xs font-bold text-[#7C3AED] z-10 truncate">
-              <Calendar size={14} className="flex-shrink-0" />
+            <div className="flex items-center gap-1 text-[11px] font-bold text-[#7C3AED] z-10 truncate">
+              <Calendar size={13} className="flex-shrink-0" />
               <span className="truncate">
                 {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'][targetMonth]} de {targetYear}
               </span>
             </div>
           )}
-          <ArrowUpRight size={72} className="absolute -right-3 -bottom-3 text-purple-500/5 pointer-events-none z-0" />
+          <ArrowUpRight size={64} className="absolute -right-3 -bottom-3 text-purple-500/5 pointer-events-none z-0" />
         </motion.div>
       </div>
 
@@ -1708,7 +1707,7 @@ const ConsorciosTab: React.FC = () => {
               {/* Card 1: A Pagar */}
               <motion.div
                 whileHover={{ y: -3, scale: 1.01 }}
-                className="relative overflow-hidden p-3 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-purple-950"
+                className="relative overflow-hidden py-2.5 px-3 border border-purple-200 rounded-[18px] shadow-sm flex flex-col justify-between min-h-[96px] transition-all duration-200 text-purple-950"
                 style={{ backgroundColor: '#EFE0F8' }}
               >
                 <div className="flex justify-between items-start z-10 gap-1">
@@ -1719,8 +1718,8 @@ const ConsorciosTab: React.FC = () => {
                     <Calendar size={12} />
                   </div>
                 </div>
-                <div className="my-1.5 z-10">
-                  <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-purple-955 block truncate">
+                <div className="my-0.5 z-10">
+                  <span className="text-base sm:text-lg xl:text-xl font-black tracking-tight text-purple-955 block truncate leading-tight">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalAPagar)}
                   </span>
                 </div>
@@ -1736,7 +1735,7 @@ const ConsorciosTab: React.FC = () => {
               {/* Card 2: Pagos */}
               <motion.div
                 whileHover={{ y: -3, scale: 1.01 }}
-                className="relative overflow-hidden p-3 border border-purple-200 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 text-purple-950"
+                className="relative overflow-hidden py-2.5 px-3 border border-purple-200 rounded-[18px] shadow-sm flex flex-col justify-between min-h-[96px] transition-all duration-200 text-purple-950"
                 style={{ backgroundColor: '#EFE0F8' }}
               >
                 <div className="flex justify-between items-start z-10 gap-1">
@@ -1747,8 +1746,8 @@ const ConsorciosTab: React.FC = () => {
                     <CircleCheck size={12} />
                   </div>
                 </div>
-                <div className="my-1.5 z-10">
-                  <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-purple-955 block truncate">
+                <div className="my-0.5 z-10">
+                  <span className="text-base sm:text-lg xl:text-xl font-black tracking-tight text-purple-955 block truncate leading-tight">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totals.totalPago)}
                   </span>
                 </div>
@@ -1765,7 +1764,7 @@ const ConsorciosTab: React.FC = () => {
               {Boolean(selectedConsorcioObj?.credito_haver_number && selectedConsorcioObj.credito_haver_number > 0) && (
                 <motion.div
                   whileHover={{ y: -3, scale: 1.01 }}
-                  className="relative overflow-hidden p-3 border border-emerald-300 rounded-[20px] shadow-sm flex flex-col justify-between h-[110px] transition-all duration-200 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100"
+                  className="relative overflow-hidden py-2.5 px-3 border border-emerald-300 rounded-[18px] shadow-sm flex flex-col justify-between min-h-[96px] transition-all duration-200 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-950 dark:text-emerald-100"
                 >
                   <div className="flex justify-between items-start z-10 gap-1">
                     <span className="text-[11px] xl:text-xs tracking-wider font-bold text-emerald-800 dark:text-emerald-300 uppercase truncate">
@@ -1775,8 +1774,8 @@ const ConsorciosTab: React.FC = () => {
                       <FolderHeart size={12} />
                     </div>
                   </div>
-                  <div className="my-1.5 z-10">
-                    <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-emerald-700 dark:text-emerald-300 block truncate">
+                  <div className="my-0.5 z-10">
+                    <span className="text-base sm:text-lg xl:text-xl font-bold tracking-tight text-emerald-700 dark:text-emerald-300 block truncate leading-tight">
                       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(selectedConsorcioObj?.credito_haver_number || 0)}
                     </span>
                   </div>
@@ -2393,10 +2392,15 @@ const ConsorciosTab: React.FC = () => {
 
                         {/* Grade de Meses */}
                         <div className="grid grid-cols-3 gap-1.5">
-                          {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName) => {
-                            const yearShort = String(editRetiradaYear).substring(2);
-                            const currentVal = `${mName}/${yearShort}`;
-                            const isSelected = editCotaMesRetirada === currentVal;
+                          {[
+                            'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                            'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                          ].map((mName, idx) => {
+                            const currentVal = `${mName}/${editRetiradaYear}`;
+                            const parsedSelected = parseMesAnoText(editCotaMesRetirada);
+                            const isSelected = parsedSelected
+                              ? parsedSelected.month === idx && parsedSelected.year === editRetiradaYear
+                              : editCotaMesRetirada === currentVal;
 
                             return (
                               <button
@@ -2728,10 +2732,15 @@ const ConsorciosTab: React.FC = () => {
 
                         {/* Grade de Meses */}
                         <div className="grid grid-cols-3 gap-1.5">
-                          {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mName) => {
-                            const yearShort = String(retiradaYear).substring(2);
-                            const currentVal = `${mName}/${yearShort}`;
-                            const isSelected = newCotaMesRetirada === currentVal;
+                          {[
+                            'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                            'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+                          ].map((mName, idx) => {
+                            const currentVal = `${mName}/${retiradaYear}`;
+                            const parsedSelected = parseMesAnoText(newCotaMesRetirada);
+                            const isSelected = parsedSelected
+                              ? parsedSelected.month === idx && parsedSelected.year === retiradaYear
+                              : newCotaMesRetirada === currentVal;
 
                             return (
                               <button
