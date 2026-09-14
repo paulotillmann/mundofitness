@@ -26,6 +26,7 @@ import {
   Phone,
   Trash2,
   Pencil,
+  RotateCcw,
   FileText
 } from 'lucide-react';
 
@@ -214,6 +215,75 @@ const CrediariosTab: React.FC = () => {
       alert('Não foi possível excluir o lançamento: ' + err.message);
     } finally {
       setIsDeletingLaunch(false);
+    }
+  };
+
+  // Estados para estorno de lançamento pago
+  const [showEstornoModal, setShowEstornoModal] = useState<boolean>(false);
+  const [launchToEstornar, setLaunchToEstornar] = useState<Crediario | null>(null);
+  const [isEstornando, setIsEstornando] = useState<boolean>(false);
+  const [estornoError, setEstornoError] = useState<string | null>(null);
+
+  const handleOpenEstornoModal = (launch: Crediario) => {
+    setLaunchToEstornar(launch);
+    setEstornoError(null);
+    setShowEstornoModal(true);
+  };
+
+  const executeEstornoLaunch = async () => {
+    if (!launchToEstornar) return;
+    setIsEstornando(true);
+    setEstornoError(null);
+    try {
+      const { data, error } = await supabase
+        .from('crediarios')
+        .update({
+          valor_pago: 0,
+          data_pagamento: null,
+          forma_pagamento: null,
+          valor_taxa_cartao: 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', launchToEstornar.id)
+        .select(`
+          *,
+          crediarios_clientes (
+            cliente_id,
+            clientes (nome, celular, outrasinformacoes)
+          ),
+          historico (descricao)
+        `);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data && data.length > 0) {
+        const updated = data[0];
+        setCrediarios((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      } else {
+        setCrediarios((prev) =>
+          prev.map((c) =>
+            c.id === launchToEstornar.id
+              ? {
+                  ...c,
+                  valor_pago: 0,
+                  data_pagamento: undefined,
+                  forma_pagamento: undefined,
+                  valor_taxa_cartao: 0
+                }
+              : c
+          )
+        );
+      }
+
+      setShowEstornoModal(false);
+      setLaunchToEstornar(null);
+    } catch (err: any) {
+      console.error('Erro ao estornar pagamento:', err);
+      setEstornoError(err.message || 'Erro ao estornar pagamento.');
+    } finally {
+      setIsEstornando(false);
     }
   };
 
@@ -2026,13 +2096,22 @@ const CrediariosTab: React.FC = () => {
                             </>
                           )}
                           {isPago && (
-                            <button
-                              onClick={() => handleOpenEditModal(launch)}
-                              className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors active:scale-95 cursor-pointer"
-                              title="Editar Dados do Lançamento Pago"
-                            >
-                              <Pencil size={16} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleOpenEstornoModal(launch)}
+                                className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors active:scale-95 cursor-pointer"
+                                title="Estornar Pagamento"
+                              >
+                                <RotateCcw size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(launch)}
+                                className="p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors active:scale-95 cursor-pointer"
+                                title="Editar Dados do Lançamento Pago"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                            </>
                           )}
                           <button
                             onClick={() => handleRequestDeleteLaunch(launch)}
@@ -3030,6 +3109,137 @@ const CrediariosTab: React.FC = () => {
                   </form>
                 </>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: CONFIRMAR ESTORNO DE PAGAMENTO */}
+      <AnimatePresence>
+        {showEstornoModal && launchToEstornar && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className={`${A.card} w-full max-w-md p-6 rounded-[24px] shadow-2xl border ${A.border} relative text-left`}
+            >
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <RotateCcw size={20} />
+                  </div>
+                  <div>
+                    <h3 className={`text-base font-bold ${A.textPrimary}`}>Estornar Pagamento?</h3>
+                    <p className={`text-xs ${A.textMuted}`}>Esta ação reverterá o lançamento para Pendente</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isEstornando) {
+                      setShowEstornoModal(false);
+                      setLaunchToEstornar(null);
+                    }
+                  }}
+                  className={`p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ${A.bgHover} transition-all cursor-pointer`}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {estornoError && (
+                <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-800/40 dark:text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle size={16} className="shrink-0 text-rose-500" />
+                  <span>{estornoError}</span>
+                </div>
+              )}
+
+              {/* Informações detalhadas do Lançamento */}
+              <div className={`p-4 rounded-2xl ${A.bgLight} border ${A.border} space-y-2 text-xs mb-4`}>
+                <div className="flex justify-between items-center">
+                  <span className={`${A.textMuted}`}>Cliente:</span>
+                  <span className={`font-bold ${A.textPrimary}`}>
+                    {launchToEstornar.crediarios_clientes?.clientes?.nome || 'Cliente não identificado'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`${A.textMuted}`}>Histórico / Descrição:</span>
+                  <span className={`font-semibold ${A.textPrimary}`}>
+                    {launchToEstornar.historico?.descricao || 'Crediário'}
+                  </span>
+                </div>
+                {launchToEstornar.referente_a && (
+                  <div className="flex justify-between items-center">
+                    <span className={`${A.textMuted}`}>Referente a:</span>
+                    <span className={`font-medium ${A.textPrimary}`}>{launchToEstornar.referente_a}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className={`${A.textMuted}`}>Valor Lançado (A Pagar):</span>
+                  <span className="font-bold text-brand-purple dark:text-purple-400">
+                    {formatCurrency(launchToEstornar.valor_pagar || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-dashed border-slate-200 dark:border-slate-700/60">
+                  <span className={`${A.textMuted}`}>Valor Pago:</span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {formatCurrency(launchToEstornar.valor_pago || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`${A.textMuted}`}>Data do Pagamento:</span>
+                  <span className={`font-semibold ${A.textPrimary}`}>
+                    {formatDate(launchToEstornar.data_pagamento)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className={`${A.textMuted}`}>Forma de Pagamento:</span>
+                  <span className={`font-semibold ${A.textPrimary}`}>
+                    {launchToEstornar.forma_pagamento || 'PIX'}
+                    {Number(launchToEstornar.valor_taxa_cartao || 0) > 0 && ` (Taxa: ${formatCurrency(launchToEstornar.valor_taxa_cartao)})`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-800 dark:bg-amber-950/30 dark:border-amber-900/40 dark:text-amber-300 text-[11px] mb-5 flex items-start gap-2">
+                <AlertCircle size={15} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <span>
+                  Ao confirmar o estorno, o valor pago será zerado, os dados do pagamento serão apagados e o lançamento retornará para <strong>Pendente</strong>.
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEstornoModal(false);
+                    setLaunchToEstornar(null);
+                  }}
+                  disabled={isEstornando}
+                  className={`px-4 py-2 text-xs font-bold rounded-xl border ${A.border} ${A.textPrimary} ${A.bgHover} transition-all cursor-pointer disabled:opacity-50`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={executeEstornoLaunch}
+                  disabled={isEstornando}
+                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 active:scale-95 rounded-xl transition-all shadow-md shadow-amber-600/10 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isEstornando ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Estornando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw size={14} />
+                      <span>Confirmar Estorno</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
